@@ -1,14 +1,29 @@
+using System.Drawing;
 using Grasshopper.Kernel;
 
 namespace Jaybird;
 
 public class HelloComponent : GH_Component
 {
-    private const int InParam_Name = 0;
-    private const int OutParam_Message = 0;
-
     public HelloComponent()
-        : base("Hello", "Hello", "Hello World component", JaybirdInfo.TabName, "Main") { }
+        : base(
+            "Hello",
+            "Hello",
+            "Hello World component",
+            JaybirdInfo.TabName,
+            "Main"
+        ) { }
+
+    protected override Bitmap? Icon =>
+        IconGenerator.GenerateComponentIcon(
+            Name,
+            JaybirdInfo.ComponentBackgroundColor
+        );
+
+    public override Guid ComponentGuid =>
+        new("c12bdcaf-adcb-49df-bba9-deecf765f794");
+
+    private const int InParam_Name = 0;
 
     protected override void RegisterInputParams(GH_InputParamManager pManager)
     {
@@ -21,9 +36,16 @@ public class HelloComponent : GH_Component
         );
     }
 
+    private const int OutParam_Message = 0;
+
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
-        pManager.AddTextParameter("Message", "M", "Greeting message", GH_ParamAccess.item);
+        pManager.AddTextParameter(
+            "Message",
+            "M",
+            "Greeting message",
+            GH_ParamAccess.item
+        );
     }
 
     protected override void SolveInstance(IGH_DataAccess DA)
@@ -36,9 +58,4 @@ public class HelloComponent : GH_Component
 
         DA.SetData(OutParam_Message, $"Hello, {name}!");
     }
-
-    protected override Bitmap? Icon => IconGenerator.GenerateComponentIcon("Hello");
-
-    public override Guid ComponentGuid => new("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
 }
-

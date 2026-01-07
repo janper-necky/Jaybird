@@ -9,9 +9,17 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CA1416;NU1701</NoWarn>
+    <OutputPath>$(MSBuildProjectDirectory)/../build</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Grasshopper" Version="8.14.25011.11001" IncludeAssets="compile;build" />
+    <PackageReference
+      Include="Grasshopper"
+      Version="8.*"
+      IncludeAssets="compile;build"
+      PrivateAssets="all"
+    />
   </ItemGroup>
 </Project>

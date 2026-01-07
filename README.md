@@ -1,71 +1,36 @@
 # Jaybird
 
-Grasshopper plugin for my own experimenting
+Grasshopper plugin for Rhino 8+.
 
 ## Build
 
-### Prerequisites
-- .NET 8 SDK
-- Rhino 8 with Grasshopper installed
+Prerequisites: .NET 8 SDK, Rhino 8
 
-### Build via Script (Windows/Mac)
 ```bash
-./build.sh
+dotnet build src/Jaybird.csproj
 ```
 
-### Build via VS Code (Windows/Mac)
-1. Open folder in VS Code
-2. Press `Ctrl+Shift+B` (Windows) or `Cmd+Shift+B` (Mac)
-3. Select "build" task
+Output: `build/Jaybird.gha`
 
-### Manual Build
-```bash
-cd src
-dotnet build -c Release
-```
+## Development
 
-### Output
-Built plugin: `src/bin/Release/net8.0/Jaybird.gha`
+1. Build using the build script `./build.sh` or in VS Code `Ctrl+Shift+B`
+2. Format using `csharpier format src/`
+3. In Rhino, run `GrasshopperDeveloperSettings`
+4. Add the `build` folder as a plugin folder
+5. Restart Rhino
+6. In VS Code, press `F5` to debug with breakpoints
 
 ## Installation
 
-### Manual Installation
-Copy `Jaybird.gha` to your Grasshopper components folder:
-- **Windows**: `%APPDATA%\Grasshopper\Libraries`
-- **Mac**: `~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/Grasshopper (b45a29b1-4343-4035-989e-044e8580d9cf)/Libraries`
+Copy `Jaybird.gha` to your Grasshopper Libraries folder, or:
 
-### Via Package Manager
 ```bash
 yak install jaybird
 ```
 
-## Packaging
-
-### Create yak package locally
-```bash
-./package.sh
-```
-
-This creates a `.yak` file for distribution.
-
 ## Publishing
 
-### Automated (GitHub Actions)
-Publishing is automated via GitHub Actions:
+Create a GitHub release with a version tag (e.g., `v0.1.0`) to auto-publish to yak.
 
-1. **Create a release** on GitHub with a version tag (e.g., `v0.1.0`)
-2. Workflow automatically builds and publishes to yak
-
-### Manual publish
-```bash
-# Build and package
-./package.sh
-
-# Publish to yak (requires YAK_TOKEN)
-yak push jaybird-*.yak
-```
-
-### Setup for automated publishing
-1. Get a yak API token from https://www.rhino3d.com/my-account
-2. Add `YAK_TOKEN` to repository secrets (Settings → Secrets → Actions)
-3. Create a release to trigger automated publishing
+Requires `YAK_TOKEN` secret from <https://www.rhino3d.com/my-account>.

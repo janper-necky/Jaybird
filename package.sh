@@ -11,7 +11,7 @@ cd ..
 
 # Create dist directory
 mkdir -p dist
-cp src/bin/Release/net48/Jaybird.gha dist/
+cp build/Jaybird.gha dist/
 
 # Package with yak (if available)
 if command -v yak &> /dev/null; then

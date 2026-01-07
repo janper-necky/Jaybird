@@ -9,4 +9,4 @@ dotnet build -c Release
 cd ..
 
 echo "Build complete!"
-echo "Output: src/bin/Release/net48/Jaybird.gha"
+echo "Output: build/Jaybird.gha"

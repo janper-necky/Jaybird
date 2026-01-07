@@ -22,6 +22,23 @@
       "problemMatcher": "$msCompile"
     },
     {
+      "label": "build-debug",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/src/Jaybird.csproj",
+        "-c",
+        "Debug"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "clean",
       "type": "shell",
       "command": "dotnet",
