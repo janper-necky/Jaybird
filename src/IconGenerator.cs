@@ -29,12 +29,15 @@ public static class IconGenerator
     private static string GetIconText(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
+        {
             return "?";
+        }
 
-        // Get first letters of each word (up to 2 characters)
         var words = name.Split([' ', '_'], StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 1)
+        {
             return words[0][0].ToString().ToUpper();
+        }
 
         return string.Join("", words.Take(2).Select(w => w[0])).ToUpper();
     }
@@ -51,14 +54,12 @@ public static class IconGenerator
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
 
-        // Draw background shape
         using (var brush = new SolidBrush(backgroundColor))
         {
             var path = GetShapePath(shape, IconSize);
             graphics.FillPath(brush, path);
         }
 
-        // Draw text
         using (var textBrush = new SolidBrush(JaybirdInfo.TextColor))
         {
             var format = new StringFormat

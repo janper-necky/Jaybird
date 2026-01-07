@@ -4,10 +4,7 @@ namespace Jaybird;
 
 public class HelloComponent : GH_Component
 {
-    // Input parameter indices
     private const int InParam_Name = 0;
-
-    // Output parameter indices
     private const int OutParam_Message = 0;
 
     public HelloComponent()
@@ -33,7 +30,9 @@ public class HelloComponent : GH_Component
     {
         string name = string.Empty;
         if (!DA.GetData(InParam_Name, ref name))
+        {
             return;
+        }
 
         DA.SetData(OutParam_Message, $"Hello, {name}!");
     }
