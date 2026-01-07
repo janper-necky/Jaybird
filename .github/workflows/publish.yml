@@ -20,7 +20,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '6.0.x'
+        dotnet-version: '8.0.x'
 
     - name: Build plugin
       run: |
@@ -56,7 +56,7 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path dist
-        Copy-Item src/bin/Release/net48/Jaybird.gha dist/
+        Copy-Item src/bin/Release/net8.0/Jaybird.gha dist/
         yak build --platform win
 
     - name: Publish to yak

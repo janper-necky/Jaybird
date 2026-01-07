@@ -3,7 +3,7 @@ name: jaybird
 version: 0.1.0
 authors:
 - Author
-description: Grasshopper plugin
+description: Grasshopper plugin for Rhino 8+
 url: https://github.com/janper-necky/Jaybird
 keywords:
 - grasshopper
