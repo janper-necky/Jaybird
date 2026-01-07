@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <Version>0.1.0</Version>
+    <Title>Jaybird</Title>
+    <Description>Grasshopper plugin</Description>
+    <TargetExt>.gha</TargetExt>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows References -->
+    <Reference Include="Grasshopper" Condition="'$(OS)' == 'Windows_NT'">
+      <HintPath>C:\Program Files\Rhino 7\Plug-ins\Grasshopper\Grasshopper.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="RhinoCommon" Condition="'$(OS)' == 'Windows_NT'">
+      <HintPath>C:\Program Files\Rhino 7\System\RhinoCommon.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <!-- macOS References -->
+    <Reference Include="Grasshopper" Condition="'$(OS)' != 'Windows_NT'">
+      <HintPath>/Applications/Rhino 7.app/Contents/Frameworks/RhCore.framework/Versions/A/Resources/ManagedPlugIns/GrasshopperPlugin.rhp/Grasshopper.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="RhinoCommon" Condition="'$(OS)' != 'Windows_NT'">
+      <HintPath>/Applications/Rhino 7.app/Contents/Frameworks/RhCore.framework/Versions/A/Resources/ManagedPlugIns/RhinoCommon.rhp/RhinoCommon.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
