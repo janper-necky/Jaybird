@@ -1,5 +1,6 @@
 using System.Drawing;
 using Grasshopper.Kernel;
+using Rhino.DocObjects.Tables;
 using Rhino.Geometry;
 
 namespace Jaybird;
@@ -8,6 +9,7 @@ internal struct Edge
 {
     internal int FromNodeIdx;
     internal int ToNodeIdx;
+    internal double Weight;
 }
 
 public class Component_Dijkstra : GH_Component
@@ -68,84 +70,59 @@ public class Component_Dijkstra : GH_Component
         var lines = new List<Line>();
         DA.GetDataList(InParam_Lines, lines);
 
+        // For fast comparison
+        var nodePointsToIndex = new Dictionary<Point3d, int>();
         var nodePoints = new List<Point3d>();
+        // Which edges lead out of a node
+        var nodeIdxToEdgeIndices = new Dictionary<int, List<int>>();
         var edges = new List<Edge>();
 
         foreach (var line in lines)
         {
-            int fromIdx = -1;
-            int toIdx = -1;
-            for (var nodeIdx = 0; nodeIdx < nodePoints.Count; nodeIdx++)
+            if (!nodePointsToIndex.TryGetValue(line.From, out var fromNodeIdx))
             {
-                if (
-                    fromIdx == -1
-                    && ArePointsSimilar(
-                        line.From,
-                        nodePoints[nodeIdx],
-                        JaybirdInfo.Epsilon
-                    )
-                )
-                {
-                    fromIdx = nodeIdx;
-                }
-                if (
-                    toIdx == -1
-                    && ArePointsSimilar(
-                        line.To,
-                        nodePoints[nodeIdx],
-                        JaybirdInfo.Epsilon
-                    )
-                )
-                {
-                    toIdx = nodeIdx;
-                }
-
-                if (fromIdx != -1 && toIdx != -1)
-                {
-                    break;
-                }
-            }
-
-            if (fromIdx != -1 && toIdx != -1)
-            {
-                bool edgeExists = false;
-                foreach (var edge in edges)
-                {
-                    if (
-                        edge.FromNodeIdx == fromIdx && edge.ToNodeIdx == toIdx
-                        || edge.FromNodeIdx == toIdx && edge.ToNodeIdx == toIdx
-                    )
-                    {
-                        edgeExists = true;
-                        break;
-                    }
-                }
-
-                if (edgeExists)
-                {
-                    continue;
-                }
-            }
-
-            if (fromIdx == -1)
-            {
-                fromIdx = nodePoints.Count;
+                fromNodeIdx = nodePointsToIndex.Count;
+                nodePointsToIndex.Add(line.From, fromNodeIdx);
                 nodePoints.Add(line.From);
             }
-
-            if (toIdx == -1)
+            if (!nodePointsToIndex.TryGetValue(line.To, out var toNodeIdx))
             {
-                toIdx = nodePoints.Count;
+                toNodeIdx = nodePointsToIndex.Count;
+                nodePointsToIndex.Add(line.To, toNodeIdx);
                 nodePoints.Add(line.To);
             }
 
-            if (fromIdx == toIdx)
+            if (
+                !nodeIdxToEdgeIndices.TryGetValue(
+                    fromNodeIdx,
+                    out var edgeIndices
+                )
+            )
             {
-                continue;
+                edgeIndices = new List<int>();
+                nodeIdxToEdgeIndices.Add(fromNodeIdx, edgeIndices);
             }
+            edgeIndices.Add(edges.Count);
 
-            edges.Add(new Edge { FromNodeIdx = fromIdx, ToNodeIdx = toIdx });
-            edges.Add(new Edge { FromNodeIdx = toIdx, ToNodeIdx = fromIdx });
+            var length = nodePoints[fromNodeIdx]
+                .DistanceTo(nodePoints[toNodeIdx]);
+
+            edges.Add(
+                new Edge
+                {
+                    FromNodeIdx = fromNodeIdx,
+                    ToNodeIdx = toNodeIdx,
+                    Weight = length,
+                }
+            );
+            edges.Add(
+                new Edge
+                {
+                    FromNodeIdx = toNodeIdx,
+                    ToNodeIdx = fromNodeIdx,
+                    Weight = length,
+                }
+            );
         }
 
         var edgeLines = new List<Line>();
@@ -161,16 +138,5 @@ public class Component_Dijkstra : GH_Component
 
         DA.SetDataList(OutParam_Nodes, nodePoints);
         DA.SetDataList(OutParam_Edges, edgeLines);
-    }
-
-    private static bool ArePointsSimilar(
-        Point3d lhs,
-        Point3d rhs,
-        double epsilon
-    )
-    {
-        return Math.Abs(lhs.X - rhs.X) < epsilon
-            && Math.Abs(lhs.Y - rhs.Y) < epsilon
-            && Math.Abs(lhs.Z - rhs.Z) < epsilon;
     }
 }
