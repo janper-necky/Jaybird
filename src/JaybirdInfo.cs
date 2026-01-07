@@ -24,7 +24,7 @@ public class JaybirdInfo : GH_AssemblyInfo
     public const string PluginName = "Jaybird";
     public const string TabName = "Jaybird";
 
-    public const double Epsilon = 0.01;
+    public const int Decimals = 1;
 
     public static readonly Color ComponentBackgroundColor = Color.FromArgb(
         180,
