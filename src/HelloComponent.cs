@@ -5,10 +5,10 @@ namespace Jaybird;
 public class HelloComponent : GH_Component
 {
     // Input parameter indices
-    private const int InputName = 0;
+    private const int InParam_Name = 0;
 
     // Output parameter indices
-    private const int OutputMessage = 0;
+    private const int OutParam_Message = 0;
 
     public HelloComponent()
         : base("Hello", "Hello", "Hello World component", JaybirdInfo.TabName, "Main") { }
@@ -32,10 +32,10 @@ public class HelloComponent : GH_Component
     protected override void SolveInstance(IGH_DataAccess DA)
     {
         string name = string.Empty;
-        if (!DA.GetData(InputName, ref name))
+        if (!DA.GetData(InParam_Name, ref name))
             return;
 
-        DA.SetData(OutputMessage, $"Hello, {name}!");
+        DA.SetData(OutParam_Message, $"Hello, {name}!");
     }
 
     protected override Bitmap? Icon => IconGenerator.GenerateComponentIcon("Hello");
