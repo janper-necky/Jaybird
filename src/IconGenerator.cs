@@ -70,7 +70,7 @@ public static class IconGenerator
 
     private static void DrawText(Graphics graphics, string name)
     {
-        var text = ExtractInitials(name);
+        var text = JaybirdInfo.ExtractInitials(name);
 
         using var textBrush = new SolidBrush(JaybirdInfo.TextColor);
         using var format = new StringFormat
@@ -86,25 +86,5 @@ public static class IconGenerator
             new RectangleF(0, 0, IconSize, IconSize),
             format
         );
-    }
-
-    private static string ExtractInitials(string name)
-    {
-        var words = name.Split(
-            [' ', '_'],
-            StringSplitOptions.RemoveEmptyEntries
-        );
-
-        if (words.Length == 0)
-        {
-            return "";
-        }
-
-        if (words.Length == 1)
-        {
-            return words[0][0].ToString().ToUpper();
-        }
-
-        return string.Join("", words.Take(2).Select(w => w[0])).ToUpper();
     }
 }

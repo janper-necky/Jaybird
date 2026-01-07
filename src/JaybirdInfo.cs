@@ -24,6 +24,8 @@ public class JaybirdInfo : GH_AssemblyInfo
     public const string PluginName = "Jaybird";
     public const string TabName = "Jaybird";
 
+    public const double Epsilon = 0.01;
+
     public static readonly Color ComponentBackgroundColor = Color.FromArgb(
         180,
         50,
@@ -37,4 +39,24 @@ public class JaybirdInfo : GH_AssemblyInfo
     public static readonly Color TextColor = Color.White;
 
     public static readonly Font IconFont = new("Arial", 10, FontStyle.Bold);
+
+    public static string ExtractInitials(string name)
+    {
+        var words = name.Split(
+            [' ', '_'],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+
+        if (words.Length == 0)
+        {
+            return "";
+        }
+
+        if (words.Length == 1)
+        {
+            return words[0][0].ToString().ToUpper();
+        }
+
+        return string.Join("", words.Take(2).Select(w => w[0])).ToUpper();
+    }
 }

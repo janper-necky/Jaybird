@@ -5,10 +5,12 @@ namespace Jaybird;
 
 public class HelloComponent : GH_Component
 {
+    static string ComponentName = "Hello";
+
     public HelloComponent()
         : base(
-            "Hello",
-            "Hello",
+            ComponentName,
+            JaybirdInfo.ExtractInitials(ComponentName),
             "Hello World component",
             JaybirdInfo.TabName,
             "Main"
@@ -16,12 +18,12 @@ public class HelloComponent : GH_Component
 
     protected override Bitmap? Icon =>
         IconGenerator.GenerateComponentIcon(
-            Name,
+            ComponentName,
             JaybirdInfo.ComponentBackgroundColor
         );
 
     public override Guid ComponentGuid =>
-        new("c12bdcaf-adcb-49df-bba9-deecf765f794");
+        new("ccef7d82-f43a-47d3-afe6-1351caa4b242");
 
     private const int InParam_Name = 0;
 
