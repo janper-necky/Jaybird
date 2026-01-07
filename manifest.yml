@@ -1,0 +1,10 @@
+---
+name: jaybird
+version: 0.1.0
+authors:
+- Author
+description: Grasshopper plugin
+url: https://github.com/janper-necky/Jaybird
+keywords:
+- grasshopper
+- plugin

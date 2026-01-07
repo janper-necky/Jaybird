@@ -1,0 +1,78 @@
+name: Publish to Yak
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+        default: '0.1.0'
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Build plugin
+      run: |
+        cd src
+        dotnet build -c Release
+        cd ..
+
+    - name: Install yak
+      shell: pwsh
+      run: |
+        $YakVersion = "0.12.0"
+        Invoke-WebRequest -Uri "https://files.mcneel.com/yak/tools/yak-$YakVersion.zip" -OutFile "yak.zip"
+        Expand-Archive "yak.zip" -DestinationPath "yak"
+        echo "$PWD/yak" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    - name: Set version
+      shell: pwsh
+      run: |
+        if ("${{ github.event_name }}" -eq "release") {
+          $version = "${{ github.event.release.tag_name }}".TrimStart('v')
+        } else {
+          $version = "${{ github.event.inputs.version }}"
+        }
+        echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+        # Update manifest
+        (Get-Content manifest.yml) -replace 'version: .*', "version: $version" | Set-Content manifest.yml
+
+        # Update csproj
+        (Get-Content src/Jaybird.csproj) -replace '<Version>.*</Version>', "<Version>$version</Version>" | Set-Content src/Jaybird.csproj
+
+    - name: Package yak
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist
+        Copy-Item src/bin/Release/net48/Jaybird.gha dist/
+        yak build --platform win
+
+    - name: Publish to yak
+      if: github.event_name == 'release' || github.event.inputs.version != ''
+      shell: pwsh
+      env:
+        YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+      run: |
+        if ($env:YAK_TOKEN) {
+          yak push jaybird-${{ env.VERSION }}-win.yak --source https://yak.rhino3d.com
+        } else {
+          Write-Host "YAK_TOKEN not set, skipping publish"
+        }
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jaybird-yak
+        path: jaybird-*.yak
