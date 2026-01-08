@@ -7,15 +7,15 @@ using Rhino.Geometry;
 
 namespace Jaybird;
 
-public class Component_Dijkstra : GH_Component
+public class Component_AStar : GH_Component
 {
-    static readonly string ComponentName = "Dijkstra";
+    static readonly string ComponentName = "A*";
 
-    public Component_Dijkstra()
+    public Component_AStar()
         : base(
             ComponentName,
             JaybirdInfo.ExtractInitials(ComponentName),
-            "Find shortest path from the start point to the end point using the Dijkstra algorithm.",
+            "Find shortest path from the start point to the end point using the A* algorithm.",
             JaybirdInfo.TabName,
             "Graph Search"
         ) { }
@@ -23,7 +23,7 @@ public class Component_Dijkstra : GH_Component
     protected override Bitmap? Icon =>
         IconGenerator.GenerateComponentIcon(ComponentName, JaybirdInfo.ComponentBackgroundColor);
 
-    public override Guid ComponentGuid => new("1076e0d4-279c-427c-a79c-43abbf0de560");
+    public override Guid ComponentGuid => new("d8db4b89-1b72-48f2-be99-f8be250ba188");
 
     private const int InParam_Lines = 0;
     private const int InParam_StartPoint = 1;
@@ -203,27 +203,30 @@ public class Component_Dijkstra : GH_Component
             }
         }
 
-        var nodeCosts = new double[nodePoints.Count];
-        Array.Fill(nodeCosts, double.MaxValue);
-        nodeCosts[startNodeIdx] = 0.0;
+        var nodeDistancesFromStart = new double[nodePoints.Count];
+        Array.Fill(nodeDistancesFromStart, double.MaxValue);
+        nodeDistancesFromStart[startNodeIdx] = 0.0;
+
+        var endNodePoint = nodePoints[endNodeIdx];
+        var nodeDistanceToEnd = new double[nodePoints.Count];
+        Array.Fill(nodeDistanceToEnd, -1.0);
 
         var nodePreviousIdx = new int[nodePoints.Count];
         Array.Fill(nodePreviousIdx, -1);
 
         var priorityQueue = new PriorityQueue<int, double>();
-        priorityQueue.Enqueue(startNodeIdx, nodeCosts[startNodeIdx]);
+        priorityQueue.Enqueue(startNodeIdx, 0.0);
 
         var visitedEdgeLines = new List<Line>();
 
+        var visitedNodeIdxs = new HashSet<int>();
+
         bool foundTheEnd = false;
 
-        while (priorityQueue.TryDequeue(out var currentNodeIdx, out var currentCost))
+        while (priorityQueue.TryDequeue(out var currentNodeIdx, out var _))
         {
-            if (currentCost > nodeCosts[currentNodeIdx])
+            if (visitedNodeIdxs.Contains(currentNodeIdx))
             {
-                // This node has been already visited and received a lower cost
-                // than the queued. This is a stall queue entry and can be
-                // removed.
                 continue;
             }
 
@@ -232,6 +235,8 @@ public class Component_Dijkstra : GH_Component
                 foundTheEnd = true;
                 break;
             }
+
+            visitedNodeIdxs.Add(currentNodeIdx);
 
             if (!nodeIdxToEdges.TryGetValue(currentNodeIdx, out var currentEdges))
             {
@@ -247,15 +252,25 @@ public class Component_Dijkstra : GH_Component
                     new Line(nodePoints[currentNodeIdx], nodePoints[neighborNodeIdx])
                 );
 
-                var neighborCost = nodeCosts[neighborNodeIdx];
-                var newNeighborCost = currentCost + edge.Length;
-                if (newNeighborCost >= neighborCost)
+                var currentDistanceFromStart = nodeDistancesFromStart[currentNodeIdx];
+                var neighborDistanceFromStart = nodeDistancesFromStart[neighborNodeIdx];
+                var newDistanceFromStart = currentDistanceFromStart + edge.Length;
+                if (newDistanceFromStart >= neighborDistanceFromStart)
                 {
                     continue;
                 }
 
-                nodeCosts[neighborNodeIdx] = newNeighborCost;
-                priorityQueue.Enqueue(neighborNodeIdx, newNeighborCost);
+                nodeDistancesFromStart[neighborNodeIdx] = newDistanceFromStart;
+
+                if (nodeDistanceToEnd[neighborNodeIdx] < 0.0)
+                {
+                    nodeDistanceToEnd[neighborNodeIdx] = nodePoints[neighborNodeIdx]
+                        .DistanceTo(endNodePoint);
+                }
+                priorityQueue.Enqueue(
+                    neighborNodeIdx,
+                    nodeDistancesFromStart[neighborNodeIdx] + nodeDistanceToEnd[neighborNodeIdx]
+                );
 
                 nodePreviousIdx[neighborNodeIdx] = currentNodeIdx;
             }
