@@ -4,7 +4,7 @@ using Grasshopper.Kernel;
 
 namespace Jaybird;
 
-public class JaybirdInfo : GH_AssemblyInfo
+public class GH_JaybirdInfo : GH_AssemblyInfo
 {
     public override string Name => PluginName;
 
