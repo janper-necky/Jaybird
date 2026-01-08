@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
@@ -7,20 +8,13 @@ public static class IconGenerator
 {
     private const int IconSize = 24;
 
-    public static Bitmap GenerateComponentIcon(
-        string name,
-        Color backgroundColor
-    )
+    public static Bitmap GenerateComponentIcon(string name, Color backgroundColor)
     {
         var bitmap = new Bitmap(IconSize, IconSize);
         using var graphics = Graphics.FromImage(bitmap);
 
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.TextRenderingHint = System
-            .Drawing
-            .Text
-            .TextRenderingHint
-            .AntiAlias;
+        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
 
         using var brush = new SolidBrush(backgroundColor);
         graphics.FillRectangle(brush, 0, 0, IconSize, IconSize);
@@ -30,20 +24,13 @@ public static class IconGenerator
         return bitmap;
     }
 
-    public static Bitmap GenerateParameterIcon(
-        string name,
-        Color backgroundColor
-    )
+    public static Bitmap GenerateParameterIcon(string name, Color backgroundColor)
     {
         var bitmap = new Bitmap(IconSize, IconSize);
         using var graphics = Graphics.FromImage(bitmap);
 
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.TextRenderingHint = System
-            .Drawing
-            .Text
-            .TextRenderingHint
-            .AntiAlias;
+        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
 
         using var brush = new SolidBrush(backgroundColor);
         using var path = new GraphicsPath();

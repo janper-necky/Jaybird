@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using Grasshopper.Kernel;
 
@@ -8,10 +9,7 @@ public class JaybirdInfo : GH_AssemblyInfo
     public override string Name => PluginName;
 
     public override Bitmap? Icon =>
-        IconGenerator.GenerateComponentIcon(
-            PluginName,
-            ComponentBackgroundColor
-        );
+        IconGenerator.GenerateComponentIcon(PluginName, ComponentBackgroundColor);
 
     public override string Description => "Grasshopper plugin for Rhino 8+";
 
@@ -24,39 +22,28 @@ public class JaybirdInfo : GH_AssemblyInfo
     public const string PluginName = "Jaybird";
     public const string TabName = "Jaybird";
 
-    public const double Epsilon = 0.01;
+    public const int Decimals = 1;
 
-    public static readonly Color ComponentBackgroundColor = Color.FromArgb(
-        180,
-        50,
-        80
-    );
-    public static readonly Color ParameterBackgroundColor = Color.FromArgb(
-        16,
-        16,
-        24
-    );
+    public static readonly Color ComponentBackgroundColor = Color.FromArgb(180, 50, 80);
+    public static readonly Color ParameterBackgroundColor = Color.FromArgb(16, 16, 24);
     public static readonly Color TextColor = Color.White;
 
     public static readonly Font IconFont = new("Arial", 10, FontStyle.Bold);
 
     public static string ExtractInitials(string name)
     {
-        var words = name.Split(
-            [' ', '_'],
-            StringSplitOptions.RemoveEmptyEntries
-        );
+        var words = name.Split([' ', '_'], StringSplitOptions.RemoveEmptyEntries);
 
         if (words.Length == 0)
         {
             return "";
         }
 
-        if (words.Length == 1)
+        var initials = "";
+        for (int i = 0; i < Math.Min(4, words.Length); i++)
         {
-            return words[0][0].ToString().ToUpper();
+            initials += words[i][0];
         }
-
-        return string.Join("", words.Take(2).Select(w => w[0])).ToUpper();
+        return initials.ToUpper();
     }
 }
