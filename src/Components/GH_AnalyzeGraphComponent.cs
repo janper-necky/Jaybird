@@ -5,6 +5,42 @@ using Rhino.Geometry;
 
 namespace Jaybird;
 
+// ANALYZE GRAPH COMPONENT
+// This component analyzes the structure of a graph and extracts various metrics.
+//
+// PURPOSE:
+// Provides statistical analysis and structural information about a graph, useful for
+// understanding network topology, identifying problematic areas, and validating graph quality.
+//
+// OUTPUTS:
+// 1. NODES & EDGES: Raw graph data as points and lines for visualization
+//
+// 2. LEAF NODES (dead ends): Nodes with degree = 1
+//    - These are terminal points in the network
+//    - In road networks: dead-end streets or cul-de-sacs
+//    - Calculated by counting unique neighbors (combines incoming + outgoing edges)
+//
+// 3. JUNCTIONS (crossroads): Nodes with degree >= 3
+//    - These are decision points where paths diverge or converge
+//    - In road networks: intersections with 3+ connecting streets
+//    - Calculated by counting unique neighbors (not just outgoing edges)
+//
+// 4. ISOLATED VERTICES (orphans): Nodes with degree = 0
+//    - These are completely disconnected points
+//    - Often indicate data quality issues or incomplete graphs
+//    - Useful for validation and cleanup
+//
+// 5. CONNECTED COMPONENTS (islands): Number of disconnected subgraphs
+//    - Each component is a maximal set of nodes where any two have a path between them
+//    - Uses BFS traversal to identify components (see GraphUtilities)
+//    - Count > 1 indicates a fragmented network
+//
+// DEGREE CALCULATION:
+// Node degree = number of unique neighbors (not edge count)
+// For bidirectional graphs: one visual connection = one neighbor (not two)
+// For directed graphs: incoming and outgoing edges to same node = one neighbor
+// This makes the metrics work correctly regardless of graph directionality.
+
 public class GH_AnalyzeGraphComponent : GH_Component
 {
     static readonly string ComponentName = "Analyze Graph";

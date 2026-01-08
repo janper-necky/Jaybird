@@ -3,6 +3,45 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Jaybird;
 
+// EDGE STRUCTURE
+// Represents a UNIDIRECTIONAL (one-way) connection between two nodes in a graph.
+//
+// PURPOSE:
+// Stores the minimal information needed to represent a directed edge:
+// - Where it goes (destination node)
+// - How much it costs to traverse (edge weight/length)
+//
+// UNIDIRECTIONAL BEHAVIOR:
+// This edge only represents movement FROM the source node TO the destination node.
+// The source node is implicit (determined by which node's adjacency list contains this edge).
+// It does NOT imply you can travel back in the opposite direction.
+//
+// For bidirectional connections, you need TWO separate edges:
+// - Edge in node A's list: A → B
+// - Edge in node B's list: B → A
+//
+// FIELDS:
+//
+// ToNodeIdx (int):
+// - The index of the destination node (where this edge points to)
+// - Must be a valid index in the graph's node array
+// - Example: If ToNodeIdx = 5, this edge goes to node 5
+//
+// Length (double):
+// - The weight/cost/distance of traversing this edge
+// - Typically Euclidean distance between node positions
+// - Used by pathfinding algorithms to calculate shortest paths
+// - Must be >= 0 (negative weights can break Dijkstra's algorithm)
+//
+// STORAGE:
+// Edges are stored in HashSet<Edge>[] in the graph, where:
+// - Array index = source node index
+// - HashSet contents = all outgoing edges from that node
+//
+// This allows HashSet to detect and prevent duplicate edges between the same nodes.
+// Important: The source node is not part of equality because it's implicit from
+// the adjacency list structure.
+
 public struct Edge
 {
     public int ToNodeIdx;

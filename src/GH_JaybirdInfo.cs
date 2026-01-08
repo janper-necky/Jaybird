@@ -40,9 +40,15 @@ public class GH_JaybirdInfo : GH_AssemblyInfo
         }
 
         var initials = "";
-        for (int i = 0; i < Math.Min(4, words.Length); i++)
+        // 3 letters in 2 rows max
+        for (int i = 0, collected = 0; i < words.Length && collected < 6; i++)
         {
-            initials += words[i][0];
+            var first = words[i][0];
+            if (char.IsLetter(first) && char.IsUpper(first))
+            {
+                initials += first;
+                collected++;
+            }
         }
         return initials.ToUpper();
     }

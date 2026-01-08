@@ -6,6 +6,79 @@ using Rhino.Geometry;
 
 namespace Jaybird;
 
+// GRAPH DATA STRUCTURE (GH_Graph)
+// Grasshopper-compatible graph implementation using adjacency list representation.
+//
+// GRAPH THEORY FUNDAMENTALS:
+// A graph is a mathematical structure used to model relationships between objects.
+// It consists of:
+// - NODES (also called vertices): The objects or points in the graph
+// - EDGES: The connections or relationships between nodes
+//
+// DIRECTED GRAPH:
+// This implementation represents a DIRECTED GRAPH where each edge has a direction:
+// an edge goes FROM one node TO another node (not necessarily bidirectional).
+//
+// UNIDIRECTIONAL EDGES:
+// Each edge is UNIDIRECTIONAL (one-way), meaning it only goes in one direction.
+// If you want a bidirectional (two-way) connection between nodes A and B, you need TWO edges:
+// - One edge from A to B
+// - One edge from B to A
+//
+// This design allows modeling both:
+// - Directed relationships (one-way streets, directed flows)
+// - Undirected relationships (two-way streets) by adding edges in both directions
+//
+// REPRESENTATION - ADJACENCY LIST:
+// We use an ADJACENCY LIST representation, which stores for each node a list of its
+// outgoing edges. This is efficient for sparse graphs (graphs with relatively few edges).
+//
+// Advantages:
+// - Space efficient: O(V + E) where V = nodes, E = edges
+// - Fast neighbor lookup: O(degree of node)
+// - Efficient for pathfinding algorithms
+//
+// NODE STRUCTURE:
+// Each node has two pieces of information:
+// - A 3D position in space (Point3d) - the physical location of the node
+// - An index (0, 1, 2, ...) - used to reference the node in data structures
+//
+// EDGE STRUCTURE:
+// Each edge connects two nodes and stores:
+// - ToNodeIdx: the index of the destination node (where the edge points to)
+// - Length: the distance/weight/cost of traversing this edge
+//
+// DATA STORAGE:
+// _nodePoints[i] = the 3D position of node i
+// _nodeEdges[i] = a HashSet of all outgoing edges from node i
+//
+// EXAMPLE:
+// Node 0 at (0,0,0) connects to node 1 at (1,0,0):
+// _nodePoints[0] = (0,0,0)
+// _nodePoints[1] = (1,0,0)
+// _nodeEdges[0] = { Edge { ToNodeIdx = 1, Length = 1.0 } }  (one-way: 0 → 1)
+// _nodeEdges[1] = { }  (no outgoing edges from node 1)
+//
+// For a bidirectional connection, you would also add:
+// _nodeEdges[1] = { Edge { ToNodeIdx = 0, Length = 1.0 } }  (two-way: 0 ⇄ 1)
+//
+// VALIDATION:
+// The graph tracks validity state (_isValid, _invalidReason) to handle:
+// - Null input data
+// - Mismatched array lengths
+// - Invalid edge references
+// - Serialization errors
+//
+// SERIALIZATION:
+// Implements Write() and Read() methods for saving/loading graphs in Grasshopper files.
+// Uses Grasshopper's GH_IWriter/GH_IReader for persistence.
+//
+// GRASSHOPPER INTEGRATION:
+// Implements IGH_Goo interface to work as a native Grasshopper data type:
+// - Can be passed between components via wires
+// - Supports duplication, validation, and type conversion
+// - Displays summary information in Grasshopper UI
+
 public class GH_Graph : IGH_Goo
 {
     private int _nodeCount;
