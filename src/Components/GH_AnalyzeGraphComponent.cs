@@ -76,17 +76,20 @@ public class GH_AnalyzeGraphComponent : GH_Component
         );
     }
 
-    private const int OutParam_Nodes = 0;
-    private const int OutParam_Edges = 1;
-    private const int OutParam_LeafNodes = 2;
-    private const int OutParam_Junctions = 3;
-    private const int OutParam_IsolatedVertices = 4;
-    private const int OutParam_ConnectedComponents = 5;
+    private const int OutParam_Edges = 0;
+    private const int OutParam_LeafNodes = 1;
+    private const int OutParam_Junctions = 2;
+    private const int OutParam_IsolatedVertices = 3;
+    private const int OutParam_ConnectedComponents = 4;
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
-        pManager.AddPointParameter("Nodes", "N", "All nodes in the graph", GH_ParamAccess.list);
-        pManager.AddLineParameter("Edges", "E", "All edges in the graph", GH_ParamAccess.list);
+        pManager.AddCurveParameter(
+            "Edges",
+            "E",
+            "All edges in the graph (as stored polyline geometry)",
+            GH_ParamAccess.list
+        );
         pManager.AddIntegerParameter(
             "Leaf Nodes",
             "L",
@@ -127,22 +130,17 @@ public class GH_AnalyzeGraphComponent : GH_Component
             return;
         }
 
-        var nodePoints = ghGraph.NodePoints;
         var nodeEdges = ghGraph.NodeEdges;
 
-        DA.SetDataList(OutParam_Nodes, nodePoints);
-
-        var lines = new List<Line>();
+        var edgeCurves = new List<Curve>();
         for (int i = 0; i < nodeEdges.Length; i++)
         {
-            var fromPoint = nodePoints[i];
             foreach (var edge in nodeEdges[i])
             {
-                var toPoint = nodePoints[edge.ToNodeIdx];
-                lines.Add(new Line(fromPoint, toPoint));
+                edgeCurves.Add(edge.Geometry.ToNurbsCurve());
             }
         }
-        DA.SetDataList(OutParam_Edges, lines);
+        DA.SetDataList(OutParam_Edges, edgeCurves);
 
         // Build incoming edges lookup for each node
         var incomingEdges = new List<int>[nodeEdges.Length];

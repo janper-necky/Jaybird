@@ -39,33 +39,31 @@ namespace Jaybird;
 // - Efficient for pathfinding algorithms
 //
 // NODE STRUCTURE:
-// Each node has two pieces of information:
-// - A 3D position in space (Point3d) - the physical location of the node
-// - An index (0, 1, 2, ...) - used to reference the node in data structures
+// Nodes are identified by their index (0, 1, 2, ...) in the adjacency list.
+// Node positions are NOT stored - they are derived from edge geometries when needed.
+// Each edge's Polyline geometry contains the full path information.
 //
 // EDGE STRUCTURE:
 // Each edge connects two nodes and stores:
 // - ToNodeIdx: the index of the destination node (where the edge points to)
 // - Length: the distance/weight/cost of traversing this edge
+// - Geometry: Polyline representing the actual path geometry
 //
 // DATA STORAGE:
-// _nodePoints[i] = the 3D position of node i
 // _nodeEdges[i] = a HashSet of all outgoing edges from node i
 //
 // EXAMPLE:
-// Node 0 at (0,0,0) connects to node 1 at (1,0,0):
-// _nodePoints[0] = (0,0,0)
-// _nodePoints[1] = (1,0,0)
-// _nodeEdges[0] = { Edge { ToNodeIdx = 1, Length = 1.0 } }  (one-way: 0 → 1)
+// Node 0 connects to node 1:
+// _nodeEdges[0] = { Edge { ToNodeIdx = 1, Length = 1.0, Geometry = Polyline([pt0, pt1]) } }
 // _nodeEdges[1] = { }  (no outgoing edges from node 1)
 //
-// For a bidirectional connection, you would also add:
-// _nodeEdges[1] = { Edge { ToNodeIdx = 0, Length = 1.0 } }  (two-way: 0 ⇄ 1)
+// For a bidirectional connection:
+// _nodeEdges[0] = { Edge { ToNodeIdx = 1, Length = 1.0, Geometry = Polyline([pt0, pt1]) } }
+// _nodeEdges[1] = { Edge { ToNodeIdx = 0, Length = 1.0, Geometry = Polyline([pt1, pt0]) } }
 //
 // VALIDATION:
 // The graph tracks validity state (_isValid, _invalidReason) to handle:
 // - Null input data
-// - Mismatched array lengths
 // - Invalid edge references
 // - Serialization errors
 //
@@ -84,7 +82,6 @@ public class GH_Graph : IGH_Goo
     private int _nodeCount;
     private int _edgeCount;
 
-    private Point3d[] _nodePoints;
     private HashSet<Edge>[] _nodeEdges;
 
     private bool _isValid;
@@ -92,43 +89,24 @@ public class GH_Graph : IGH_Goo
 
     public GH_Graph()
     {
-        _nodePoints = [];
         _nodeEdges = [];
         _isValid = false;
         _invalidReason = "The graph is uninitialized";
     }
 
-    public GH_Graph(IReadOnlyList<Point3d> nodePoints, IReadOnlyList<HashSet<Edge>> nodeEdges)
+    public GH_Graph(IReadOnlyList<HashSet<Edge>> nodeEdges)
     {
-        if (nodePoints == null || nodeEdges == null)
+        if (nodeEdges == null)
         {
             _nodeCount = 0;
             _edgeCount = 0;
-            _nodePoints = [];
             _nodeEdges = [];
             _isValid = false;
-            _invalidReason = "Node points or edges collection is null";
+            _invalidReason = "Edges collection is null";
             return;
         }
 
-        if (nodePoints.Count != nodeEdges.Count)
-        {
-            _nodeCount = 0;
-            _edgeCount = 0;
-            _nodePoints = [];
-            _nodeEdges = [];
-            _isValid = false;
-            _invalidReason = "Node points and edges arrays have mismatched lengths";
-            return;
-        }
-
-        _nodeCount = nodePoints.Count;
-
-        _nodePoints = new Point3d[_nodeCount];
-        for (int i = 0; i < _nodeCount; i++)
-        {
-            _nodePoints[i] = nodePoints[i];
-        }
+        _nodeCount = nodeEdges.Count;
 
         _nodeEdges = new HashSet<Edge>[nodeEdges.Count];
         for (int i = 0; i < nodeEdges.Count; i++)
@@ -137,7 +115,6 @@ public class GH_Graph : IGH_Goo
             {
                 _nodeCount = 0;
                 _edgeCount = 0;
-                _nodePoints = [];
                 _nodeEdges = [];
                 _isValid = false;
                 _invalidReason = $"Edge set at node {i} is null";
@@ -164,8 +141,6 @@ public class GH_Graph : IGH_Goo
 
     public string IsValidWhyNot => _isValid ? string.Empty : _invalidReason;
 
-    public Point3d[] NodePoints => _nodePoints;
-
     public HashSet<Edge>[] NodeEdges => _nodeEdges;
 
     public bool CastFrom(object source)
@@ -181,7 +156,7 @@ public class GH_Graph : IGH_Goo
 
     public IGH_Goo Duplicate()
     {
-        return new GH_Graph(_nodePoints, _nodeEdges);
+        return new GH_Graph(_nodeEdges);
     }
 
     public IGH_GooProxy? EmitProxy()
@@ -193,13 +168,6 @@ public class GH_Graph : IGH_Goo
     {
         writer.SetInt32("NodeCount", _nodeCount);
         writer.SetInt32("EdgeCount", _edgeCount);
-        for (int i = 0; i < _nodePoints.Length; i++)
-        {
-            writer.SetPoint3D(
-                $"NodePoint_{i}",
-                new GH_Point3D(_nodePoints[i].X, _nodePoints[i].Y, _nodePoints[i].Z)
-            );
-        }
         for (int i = 0; i < _nodeEdges.Length; i++)
         {
             var edgeSet = _nodeEdges[i];
@@ -210,6 +178,17 @@ public class GH_Graph : IGH_Goo
             {
                 writer.SetInt32($"Node_{i}_Edge_{j}_ToNodeIdx", edges[j].ToNodeIdx);
                 writer.SetDouble($"Node_{i}_Edge_{j}_Length", edges[j].Length);
+
+                // Serialize polyline geometry (always present)
+                var polyline = edges[j].Geometry;
+                writer.SetInt32($"Node_{i}_Edge_{j}_GeometryCount", polyline.Count);
+                for (int k = 0; k < polyline.Count; k++)
+                {
+                    writer.SetPoint3D(
+                        $"Node_{i}_Edge_{j}_Geometry_{k}",
+                        new GH_Point3D(polyline[k].X, polyline[k].Y, polyline[k].Z)
+                    );
+                }
             }
         }
         return true;
@@ -221,7 +200,6 @@ public class GH_Graph : IGH_Goo
         {
             _nodeCount = 0;
             _edgeCount = 0;
-            _nodePoints = [];
             _nodeEdges = [];
             _isValid = false;
             _invalidReason = "Missing NodeCount or EdgeCount in serialized data";
@@ -237,29 +215,13 @@ public class GH_Graph : IGH_Goo
             {
                 _nodeCount = 0;
                 _edgeCount = 0;
-                _nodePoints = [];
                 _nodeEdges = [];
                 _isValid = false;
                 _invalidReason = "Node count is negative in serialized data";
                 return false;
             }
 
-            _nodePoints = new Point3d[_nodeCount];
             _nodeEdges = new HashSet<Edge>[_nodeCount];
-
-            for (int i = 0; i < _nodeCount; i++)
-            {
-                var pointKey = $"NodePoint_{i}";
-                if (reader.ItemExists(pointKey))
-                {
-                    var ghPoint = reader.GetPoint3D(pointKey);
-                    _nodePoints[i] = new Point3d(ghPoint.x, ghPoint.y, ghPoint.z);
-                }
-                else
-                {
-                    _nodePoints[i] = Point3d.Origin;
-                }
-            }
 
             for (int i = 0; i < _nodeCount; i++)
             {
@@ -284,7 +246,40 @@ public class GH_Graph : IGH_Goo
 
                                 if (toNodeIdx >= 0 && toNodeIdx < _nodeCount && length >= 0)
                                 {
-                                    edges.Add(new Edge { ToNodeIdx = toNodeIdx, Length = length });
+                                    // Deserialize polyline geometry
+                                    Polyline geometry;
+                                    var geometryCountKey = $"Node_{i}_Edge_{j}_GeometryCount";
+                                    if (reader.ItemExists(geometryCountKey))
+                                    {
+                                        var geometryCount = reader.GetInt32(geometryCountKey);
+                                        var points = new List<Point3d>();
+                                        for (int k = 0; k < geometryCount; k++)
+                                        {
+                                            var geometryKey = $"Node_{i}_Edge_{j}_Geometry_{k}";
+                                            if (reader.ItemExists(geometryKey))
+                                            {
+                                                var ghPoint = reader.GetPoint3D(geometryKey);
+                                                points.Add(
+                                                    new Point3d(ghPoint.x, ghPoint.y, ghPoint.z)
+                                                );
+                                            }
+                                        }
+                                        geometry = new Polyline(points);
+                                    }
+                                    else
+                                    {
+                                        // Cannot create edge without geometry
+                                        continue;
+                                    }
+
+                                    edges.Add(
+                                        new Edge
+                                        {
+                                            ToNodeIdx = toNodeIdx,
+                                            Length = length,
+                                            Geometry = geometry,
+                                        }
+                                    );
                                 }
                             }
                         }
@@ -300,7 +295,6 @@ public class GH_Graph : IGH_Goo
         {
             _nodeCount = 0;
             _edgeCount = 0;
-            _nodePoints = [];
             _nodeEdges = [];
             _isValid = false;
             _invalidReason = "Exception occurred while reading serialized data";

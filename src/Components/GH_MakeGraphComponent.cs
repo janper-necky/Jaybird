@@ -157,7 +157,12 @@ public class GH_MakeGraphComponent : GH_Component
 
             var length = line.Length;
 
-            var edgeAB = new Edge { ToNodeIdx = nodeBIdx, Length = length };
+            var edgeAB = new Edge
+            {
+                ToNodeIdx = nodeBIdx,
+                Length = length,
+                Geometry = new Polyline(new[] { nodeAPointRounded, nodeBPointRounded }),
+            };
             if (nodeIdxToEdges.TryGetValue(nodeAIdx, out var edgesFromA))
             {
                 edgesFromA.Add(edgeAB);
@@ -170,7 +175,12 @@ public class GH_MakeGraphComponent : GH_Component
 
             if (twoWay)
             {
-                var edgeBA = new Edge { ToNodeIdx = nodeAIdx, Length = length };
+                var edgeBA = new Edge
+                {
+                    ToNodeIdx = nodeAIdx,
+                    Length = length,
+                    Geometry = new Polyline(new[] { nodeBPointRounded, nodeAPointRounded }),
+                };
                 if (nodeIdxToEdges.TryGetValue(nodeBIdx, out var edgesFromB))
                 {
                     edgesFromB.Add(edgeBA);
@@ -221,7 +231,7 @@ public class GH_MakeGraphComponent : GH_Component
             }
         }
 
-        var ghGraph = new GH_Graph(nodePoints, edgesArray);
+        var ghGraph = new GH_Graph(edgesArray);
 
         DA.SetData(OutParam_Graph, ghGraph);
     }

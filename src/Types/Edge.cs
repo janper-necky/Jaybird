@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using Rhino.Geometry;
 
 namespace Jaybird;
 
@@ -7,9 +8,10 @@ namespace Jaybird;
 // Represents a UNIDIRECTIONAL (one-way) connection between two nodes in a graph.
 //
 // PURPOSE:
-// Stores the minimal information needed to represent a directed edge:
-// - Where it goes (destination node)
+// Stores the information needed to represent a directed edge:
+// - Where it goes (destination node index)
 // - How much it costs to traverse (edge weight/length)
+// - The actual geometry of the path (polyline)
 //
 // UNIDIRECTIONAL BEHAVIOR:
 // This edge only represents movement FROM the source node TO the destination node.
@@ -29,9 +31,15 @@ namespace Jaybird;
 //
 // Length (double):
 // - The weight/cost/distance of traversing this edge
-// - Typically Euclidean distance between node positions
 // - Used by pathfinding algorithms to calculate shortest paths
 // - Must be >= 0 (negative weights can break Dijkstra's algorithm)
+// - Typically matches the polyline's total length
+//
+// Geometry (Polyline):
+// - The actual path geometry for this edge (always present)
+// - For simple point-to-point edges: 2-point polyline [start, end]
+// - For merged road segments: multi-point polyline preserving the full path
+// - Contains all spatial information - node positions are derived from this
 //
 // STORAGE:
 // Edges are stored in HashSet<Edge>[] in the graph, where:
@@ -46,6 +54,7 @@ public struct Edge
 {
     public int ToNodeIdx;
     public double Length;
+    public Polyline Geometry;
 
     public override readonly bool Equals([NotNullWhen(true)] object? obj)
     {

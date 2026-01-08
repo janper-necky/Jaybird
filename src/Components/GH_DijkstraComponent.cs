@@ -89,7 +89,6 @@ public class GH_DijkstraComponent : GH_Component
             return;
         }
 
-        var nodePoints = ghGraph.NodePoints;
         var nodeEdges = ghGraph.NodeEdges;
 
         int startNodeIdx = 0;
@@ -107,13 +106,13 @@ public class GH_DijkstraComponent : GH_Component
         bool showVisitedEdges = false;
         DA.GetData(InParam_ShowVisitedEdges, ref showVisitedEdges);
 
-        if (startNodeIdx < 0 || startNodeIdx >= nodePoints.Length)
+        if (startNodeIdx < 0 || startNodeIdx >= nodeEdges.Length)
         {
             AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Start node index is out of range.");
             return;
         }
 
-        if (endNodeIdx < 0 || endNodeIdx >= nodePoints.Length)
+        if (endNodeIdx < 0 || endNodeIdx >= nodeEdges.Length)
         {
             AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "End node index is out of range.");
             return;
@@ -133,11 +132,11 @@ public class GH_DijkstraComponent : GH_Component
         // - priorityQueue: processes nodes in order of distance from start (g only)
         // - visitedEdgeLines: optional visualization of algorithm progress
 
-        var nodeDistancesFromStart = new double[nodePoints.Length];
+        var nodeDistancesFromStart = new double[nodeEdges.Length];
         Array.Fill(nodeDistancesFromStart, double.MaxValue);
         nodeDistancesFromStart[startNodeIdx] = 0.0;
 
-        var nodePreviousIdx = new int[nodePoints.Length];
+        var nodePreviousIdx = new int[nodeEdges.Length];
         Array.Fill(nodePreviousIdx, -1);
 
         var priorityQueue = new PriorityQueue<int, double>();
@@ -184,7 +183,7 @@ public class GH_DijkstraComponent : GH_Component
                 if (showVisitedEdges)
                 {
                     visitedEdgeLines.Add(
-                        new Line(nodePoints[currentNodeIdx], nodePoints[neighborNodeIdx])
+                        new Line(edge.Geometry[0], edge.Geometry[edge.Geometry.Count - 1])
                     );
                 }
 
@@ -231,21 +230,65 @@ public class GH_DijkstraComponent : GH_Component
             "Found the shortest path to the end point."
         );
 
-        // PATH RECONSTRUCTION: walk backwards from end to start, then reverse
-        var path = new List<Point3d>();
+        // PATH RECONSTRUCTION: walk backwards from end to start to get node sequence
+        var pathNodeIndices = new List<int>();
         var pathNodeIdx = endNodeIdx;
-        path.Add(nodePoints[pathNodeIdx]);
+        pathNodeIndices.Add(pathNodeIdx);
 
         while (pathNodeIdx != startNodeIdx)
         {
             var previousNodeIdx = nodePreviousIdx[pathNodeIdx];
             pathNodeIdx = previousNodeIdx;
-            path.Add(nodePoints[pathNodeIdx]);
+            pathNodeIndices.Add(pathNodeIdx);
         }
 
-        path.Reverse();
+        pathNodeIndices.Reverse();
 
-        var pathPolyline = new Polyline(path);
+        // Reconstruct path geometry from edge polylines
+        var pathPoints = new List<Point3d>();
+        for (int i = 0; i < pathNodeIndices.Count - 1; i++)
+        {
+            var fromNodeIdx = pathNodeIndices[i];
+            var toNodeIdx = pathNodeIndices[i + 1];
+
+            // Find the edge from fromNodeIdx to toNodeIdx
+            Edge? foundEdge = null;
+            foreach (var edge in nodeEdges[fromNodeIdx])
+            {
+                if (edge.ToNodeIdx == toNodeIdx)
+                {
+                    foundEdge = edge;
+                    break;
+                }
+            }
+
+            if (foundEdge.HasValue)
+            {
+                var edgePolyline = foundEdge.Value.Geometry;
+                // Add all points except the last one (to avoid duplicates)
+                for (int j = 0; j < edgePolyline.Count - 1; j++)
+                {
+                    pathPoints.Add(edgePolyline[j]);
+                }
+            }
+        }
+
+        // Add the final point from the last edge
+        if (pathNodeIndices.Count > 1)
+        {
+            var lastFromIdx = pathNodeIndices[pathNodeIndices.Count - 2];
+            var lastToIdx = pathNodeIndices[pathNodeIndices.Count - 1];
+            foreach (var edge in nodeEdges[lastFromIdx])
+            {
+                if (edge.ToNodeIdx == lastToIdx)
+                {
+                    pathPoints.Add(edge.Geometry[edge.Geometry.Count - 1]);
+                    break;
+                }
+            }
+        }
+
+        var pathPolyline = new Polyline(pathPoints);
 
         DA.SetData(OutParam_PathPolyline, pathPolyline);
     }
