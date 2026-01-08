@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using Grasshopper.Kernel;
 
@@ -16,11 +17,7 @@ public class HelloParameter : GH_Param<GH_Hello>
         ) { }
 
     protected override Bitmap? Icon =>
-        IconGenerator.GenerateParameterIcon(
-            Name,
-            JaybirdInfo.ParameterBackgroundColor
-        );
+        IconGenerator.GenerateParameterIcon(Name, JaybirdInfo.ParameterBackgroundColor);
 
-    public override Guid ComponentGuid =>
-        new("180115b3-0fa1-4710-b3a4-35910f48b8e7");
+    public override Guid ComponentGuid => new("180115b3-0fa1-4710-b3a4-35910f48b8e7");
 }

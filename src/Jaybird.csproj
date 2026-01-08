@@ -8,7 +8,7 @@
     <Platforms>x64</Platforms>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <NoWarn>$(NoWarn);CA1416;NU1701</NoWarn>
     <OutputPath>$(MSBuildProjectDirectory)/../build</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

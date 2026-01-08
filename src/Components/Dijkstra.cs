@@ -1,14 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 
 namespace Jaybird;
-
-internal struct Edge
-{
-    internal int ToNodeIdx;
-    internal double Weight;
-}
 
 public class Component_Dijkstra : GH_Component
 {
@@ -18,19 +15,15 @@ public class Component_Dijkstra : GH_Component
         : base(
             ComponentName,
             JaybirdInfo.ExtractInitials(ComponentName),
-            "Dijkstra algorithm component",
+            "Find shortest path from the start point to the end point using the Dijkstra algorithm.",
             JaybirdInfo.TabName,
-            "Main"
+            "Graph Search"
         ) { }
 
     protected override Bitmap? Icon =>
-        IconGenerator.GenerateComponentIcon(
-            ComponentName,
-            JaybirdInfo.ComponentBackgroundColor
-        );
+        IconGenerator.GenerateComponentIcon(ComponentName, JaybirdInfo.ComponentBackgroundColor);
 
-    public override Guid ComponentGuid =>
-        new("1076e0d4-279c-427c-a79c-43abbf0de560");
+    public override Guid ComponentGuid => new("1076e0d4-279c-427c-a79c-43abbf0de560");
 
     private const int InParam_Lines = 0;
     private const int InParam_StartPoint = 1;
@@ -38,24 +31,14 @@ public class Component_Dijkstra : GH_Component
 
     protected override void RegisterInputParams(GH_InputParamManager pManager)
     {
-        pManager.AddLineParameter(
-            "Lines",
-            "L",
-            "Lines representing roads",
-            GH_ParamAccess.list
-        );
+        pManager.AddLineParameter("Lines", "L", "Lines representing roads", GH_ParamAccess.list);
         pManager.AddPointParameter(
             "Start Point",
             "S",
             "Starting point for the path",
             GH_ParamAccess.item
         );
-        pManager.AddPointParameter(
-            "End Point",
-            "E",
-            "End point for the path",
-            GH_ParamAccess.item
-        );
+        pManager.AddPointParameter("End Point", "E", "End point for the path", GH_ParamAccess.item);
     }
 
     private const int OutParam_Nodes = 0;
@@ -65,18 +48,8 @@ public class Component_Dijkstra : GH_Component
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
-        pManager.AddPointParameter(
-            "Nodes",
-            "N",
-            "Nodes in the graph",
-            GH_ParamAccess.list
-        );
-        pManager.AddLineParameter(
-            "Edges",
-            "E",
-            "All edges in the graph",
-            GH_ParamAccess.list
-        );
+        pManager.AddPointParameter("Nodes", "N", "Nodes in the graph", GH_ParamAccess.list);
+        pManager.AddLineParameter("Edges", "E", "All edges in the graph", GH_ParamAccess.list);
         pManager.AddLineParameter(
             "Visited Edges",
             "VE",
@@ -89,6 +62,29 @@ public class Component_Dijkstra : GH_Component
             "Path from start to end as polyline",
             GH_ParamAccess.item
         );
+    }
+
+    internal struct Edge
+    {
+        internal int ToNodeIdx;
+        internal double Weight;
+
+        public override readonly bool Equals([NotNullWhen(true)] object? obj)
+        {
+            if (!base.Equals(obj))
+            {
+                return false;
+            }
+
+            var other = (Edge)obj;
+
+            return other.ToNodeIdx == ToNodeIdx && other.Weight == Weight;
+        }
+
+        public override readonly int GetHashCode()
+        {
+            return HashCode.Combine(ToNodeIdx, Weight);
+        }
     }
 
     protected override void SolveInstance(IGH_DataAccess DA)
@@ -105,12 +101,7 @@ public class Component_Dijkstra : GH_Component
         foreach (var line in lines)
         {
             var nodeAPointRounded = RoundPoint(line.From, JaybirdInfo.Decimals);
-            if (
-                !nodePointToIndex.TryGetValue(
-                    nodeAPointRounded,
-                    out var nodeAIdx
-                )
-            )
+            if (!nodePointToIndex.TryGetValue(nodeAPointRounded, out var nodeAIdx))
             {
                 nodeAIdx = nodePointToIndex.Count;
                 nodePointToIndex.Add(nodeAPointRounded, nodeAIdx);
@@ -118,12 +109,7 @@ public class Component_Dijkstra : GH_Component
             }
 
             var nodeBPointRounded = RoundPoint(line.To, JaybirdInfo.Decimals);
-            if (
-                !nodePointToIndex.TryGetValue(
-                    nodeBPointRounded,
-                    out var nodeBIdx
-                )
-            )
+            if (!nodePointToIndex.TryGetValue(nodeBPointRounded, out var nodeBIdx))
             {
                 nodeBIdx = nodePointToIndex.Count;
                 nodePointToIndex.Add(nodeBPointRounded, nodeBIdx);
@@ -135,7 +121,7 @@ public class Component_Dijkstra : GH_Component
                 continue;
             }
 
-            var length = nodePoints[nodeAIdx].DistanceTo(nodePoints[nodeBIdx]);
+            var length = line.Length;
 
             var edgeAB = new Edge { ToNodeIdx = nodeBIdx, Weight = length };
             if (nodeIdxToEdges.TryGetValue(nodeAIdx, out var edgesFromA))
@@ -160,38 +146,38 @@ public class Component_Dijkstra : GH_Component
             }
         }
 
-        var helper_edgeLines = new List<Line>();
+        DA.SetDataList(OutParam_Nodes, nodePoints);
+
+        var edgeLines = new List<Line>();
+        var usedEdges = new HashSet<(int, int)>();
         foreach (var (nodeAIdx, edges) in nodeIdxToEdges)
         {
-            // TODO: Prevent duplicate lines created due to unidirectional edges
             foreach (var edge in edges)
             {
                 var nodeBIdx = edge.ToNodeIdx;
+                var orderedEdge = (Math.Min(nodeAIdx, nodeBIdx), Math.Max(nodeAIdx, nodeBIdx));
+                if (usedEdges.Contains(orderedEdge))
+                {
+                    continue;
+                }
+                usedEdges.Add(orderedEdge);
                 var line = new Line(nodePoints[nodeAIdx], nodePoints[nodeBIdx]);
-                helper_edgeLines.Add(line);
+                edgeLines.Add(line);
             }
         }
-
-        DA.SetDataList(OutParam_Nodes, nodePoints);
-        DA.SetDataList(OutParam_Edges, helper_edgeLines);
+        DA.SetDataList(OutParam_Edges, edgeLines);
 
         var startPoint = new Point3d();
         if (!DA.GetData(InParam_StartPoint, ref startPoint))
         {
-            AddRuntimeMessage(
-                GH_RuntimeMessageLevel.Warning,
-                "Failed to collect start point."
-            );
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Failed to collect start point.");
             return;
         }
 
         var endPoint = new Point3d();
         if (!DA.GetData(InParam_EndPoint, ref endPoint))
         {
-            AddRuntimeMessage(
-                GH_RuntimeMessageLevel.Warning,
-                "Failed to collect end point."
-            );
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Failed to collect end point.");
             return;
         }
 
@@ -202,8 +188,7 @@ public class Component_Dijkstra : GH_Component
 
         for (var nodeIdx = 0; nodeIdx < nodePoints.Count; nodeIdx++)
         {
-            var distanceToStartPoint = nodePoints[nodeIdx]
-                .DistanceTo(startPoint);
+            var distanceToStartPoint = nodePoints[nodeIdx].DistanceTo(startPoint);
             if (distanceToStartPoint < startPointClosestDistance)
             {
                 startPointClosestDistance = distanceToStartPoint;
@@ -218,39 +203,37 @@ public class Component_Dijkstra : GH_Component
             }
         }
 
-        var nodeCosts = Enumerable
-            .Repeat(double.MaxValue, nodePoints.Count)
-            .ToArray();
-        nodeCosts[startNodeIdx] = 0;
+        var nodeCosts = new double[nodePoints.Count];
+        Array.Fill(nodeCosts, double.MaxValue);
+        nodeCosts[startNodeIdx] = 0.0;
 
-        var nodePreviousIdx = Enumerable.Repeat(-1, nodePoints.Count).ToArray();
+        var nodePreviousIdx = new int[nodePoints.Count];
+        Array.Fill(nodePreviousIdx, -1);
 
-        var resolvedNodeIdxs = new HashSet<int>();
+        var priorityQueue = new PriorityQueue<int, double>();
+        priorityQueue.Enqueue(startNodeIdx, nodeCosts[startNodeIdx]);
 
-        var stack = new SortedList<double, int>(new CostComparer())
+        var visitedEdgeLines = new List<Line>();
+
+        bool foundTheEnd = false;
+
+        while (priorityQueue.TryDequeue(out var currentNodeIdx, out var currentCost))
         {
-            { nodeCosts[startNodeIdx], startNodeIdx },
-        };
-
-        var helper_visitedEdgeLines = new List<Line>();
-
-        while (stack.Count > 0)
-        {
-            var (currentCost, currentNodeIdx) = stack.ElementAt(0);
+            if (currentCost > nodeCosts[currentNodeIdx])
+            {
+                // This node has been already visited and received a lower cost
+                // than the queued. This is a stall queue entry and can be
+                // removed.
+                continue;
+            }
 
             if (currentNodeIdx == endNodeIdx)
             {
+                foundTheEnd = true;
                 break;
             }
 
-            stack.RemoveAt(0);
-
-            if (
-                !nodeIdxToEdges.TryGetValue(
-                    currentNodeIdx,
-                    out var currentEdges
-                )
-            )
+            if (!nodeIdxToEdges.TryGetValue(currentNodeIdx, out var currentEdges))
             {
                 // Dead end
                 continue;
@@ -259,16 +242,9 @@ public class Component_Dijkstra : GH_Component
             foreach (var edge in currentEdges)
             {
                 var neighborNodeIdx = edge.ToNodeIdx;
-                if (resolvedNodeIdxs.Contains(neighborNodeIdx))
-                {
-                    continue;
-                }
 
-                helper_visitedEdgeLines.Add(
-                    new Line(
-                        nodePoints[currentNodeIdx],
-                        nodePoints[neighborNodeIdx]
-                    )
+                visitedEdgeLines.Add(
+                    new Line(nodePoints[currentNodeIdx], nodePoints[neighborNodeIdx])
                 );
 
                 var neighborCost = nodeCosts[neighborNodeIdx];
@@ -279,37 +255,23 @@ public class Component_Dijkstra : GH_Component
                 }
 
                 nodeCosts[neighborNodeIdx] = newNeighborCost;
-                stack.Add(newNeighborCost, neighborNodeIdx);
+                priorityQueue.Enqueue(neighborNodeIdx, newNeighborCost);
 
                 nodePreviousIdx[neighborNodeIdx] = currentNodeIdx;
             }
-
-            resolvedNodeIdxs.Add(currentNodeIdx);
         }
 
-        DA.SetDataList(OutParam_VisitedEdges, helper_visitedEdgeLines);
+        DA.SetDataList(OutParam_VisitedEdges, visitedEdgeLines);
 
-        if (stack.Count == 0)
+        if (!foundTheEnd)
         {
-            AddRuntimeMessage(
-                GH_RuntimeMessageLevel.Error,
-                "Emptied stack and didn't find the end. Perhaps the end is not reachable."
-            );
-            return;
-        }
-
-        if (stack.GetValueAtIndex(0) != endNodeIdx)
-        {
-            AddRuntimeMessage(
-                GH_RuntimeMessageLevel.Error,
-                "Stack is not empty yet and didn't find the end. This is strange."
-            );
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "The end point may not be reachable.");
             return;
         }
 
         AddRuntimeMessage(
             GH_RuntimeMessageLevel.Remark,
-            "Yeeehaw, found the path!"
+            "Found the shortest path to the end point."
         );
 
         var path = new List<Point3d>();
@@ -332,25 +294,10 @@ public class Component_Dijkstra : GH_Component
 
     private static Point3d RoundPoint(Point3d pt, int decimals)
     {
-        decimals = Math.Min(5, decimals);
         return new Point3d(
             Math.Round(pt.X, decimals),
             Math.Round(pt.Y, decimals),
             Math.Round(pt.Z, decimals)
         );
-    }
-}
-
-public class CostComparer : IComparer<double>
-{
-    public int Compare(double lhs, double rhs)
-    {
-        int result = lhs.CompareTo(rhs);
-        if (result == 0)
-        {
-            return 1;
-        }
-
-        return result;
     }
 }
