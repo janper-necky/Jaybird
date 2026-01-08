@@ -1,0 +1,178 @@
+using System.Collections.Generic;
+using System.Drawing;
+using Grasshopper.Kernel;
+using Rhino.Geometry;
+
+namespace Jaybird;
+
+public class GH_AnalyzeGraphComponent : GH_Component
+{
+    static readonly string ComponentName = "Analyze Graph";
+
+    public GH_AnalyzeGraphComponent()
+        : base(
+            ComponentName,
+            GH_JaybirdInfo.ExtractInitials(ComponentName),
+            "Analyze a graph: nodes, edges, leaf nodes (dead ends), "
+                + "junctions (crossroads), isolated vertices (orphans), "
+                + "and connected components (islands).",
+            GH_JaybirdInfo.TabName,
+            "Graph Search"
+        ) { }
+
+    public override GH_Exposure Exposure => GH_Exposure.secondary;
+
+    protected override Bitmap? Icon =>
+        IconGenerator.GenerateComponentIcon(ComponentName, GH_JaybirdInfo.ComponentBackgroundColor);
+
+    public override System.Guid ComponentGuid => new("04ca808c-dafc-4f69-b688-f0ad25f91495");
+
+    private const int InParam_Graph = 0;
+
+    protected override void RegisterInputParams(GH_InputParamManager pManager)
+    {
+        pManager.AddParameter(
+            new GH_GraphParameter(),
+            "Graph",
+            "G",
+            "Graph to analyze",
+            GH_ParamAccess.item
+        );
+    }
+
+    private const int OutParam_Nodes = 0;
+    private const int OutParam_Edges = 1;
+    private const int OutParam_LeafNodes = 2;
+    private const int OutParam_Junctions = 3;
+    private const int OutParam_IsolatedVertices = 4;
+    private const int OutParam_ConnectedComponents = 5;
+
+    protected override void RegisterOutputParams(GH_OutputParamManager pManager)
+    {
+        pManager.AddPointParameter("Nodes", "N", "All nodes in the graph", GH_ParamAccess.list);
+        pManager.AddLineParameter("Edges", "E", "All edges in the graph", GH_ParamAccess.list);
+        pManager.AddIntegerParameter(
+            "Leaf Nodes",
+            "L",
+            "Number of leaf nodes (dead ends): nodes connected to exactly one neighbor",
+            GH_ParamAccess.item
+        );
+        pManager.AddIntegerParameter(
+            "Junctions",
+            "J",
+            "Number of junctions (crossroads): nodes connected to 3+ neighbors",
+            GH_ParamAccess.item
+        );
+        pManager.AddIntegerParameter(
+            "Isolated Vertices",
+            "IV",
+            "Number of isolated vertices (orphans): nodes with no connections",
+            GH_ParamAccess.item
+        );
+        pManager.AddIntegerParameter(
+            "Connected Components",
+            "CC",
+            "Number of connected components (islands): disconnected subgraphs",
+            GH_ParamAccess.item
+        );
+    }
+
+    protected override void SolveInstance(IGH_DataAccess DA)
+    {
+        GH_Graph ghGraph = null!;
+        if (!DA.GetData(InParam_Graph, ref ghGraph))
+        {
+            return;
+        }
+
+        if (!ghGraph.IsValid)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ghGraph.IsValidWhyNot);
+            return;
+        }
+
+        var nodePoints = ghGraph.NodePoints;
+        var nodeEdges = ghGraph.NodeEdges;
+
+        DA.SetDataList(OutParam_Nodes, nodePoints);
+
+        var lines = new List<Line>();
+        for (int i = 0; i < nodeEdges.Length; i++)
+        {
+            var fromPoint = nodePoints[i];
+            foreach (var edge in nodeEdges[i])
+            {
+                var toPoint = nodePoints[edge.ToNodeIdx];
+                lines.Add(new Line(fromPoint, toPoint));
+            }
+        }
+        DA.SetDataList(OutParam_Edges, lines);
+
+        // Build incoming edges lookup for each node
+        var incomingEdges = new List<int>[nodeEdges.Length];
+        for (int i = 0; i < nodeEdges.Length; i++)
+        {
+            incomingEdges[i] = new List<int>();
+        }
+
+        for (int i = 0; i < nodeEdges.Length; i++)
+        {
+            foreach (var edge in nodeEdges[i])
+            {
+                incomingEdges[edge.ToNodeIdx].Add(i);
+            }
+        }
+
+        // Count nodes by unique neighbor count (degree)
+        // Leaf nodes (dead ends): degree 1 - exactly 1 unique neighbor
+        // Junctions (crossroads): degree >= 3 - connected to 3+ neighbors
+        // Isolated vertices (orphans): degree 0 - no neighbors at all
+        int leafNodes = 0;
+        int junctions = 0;
+        int isolatedVertices = 0;
+
+        for (int i = 0; i < nodeEdges.Length; i++)
+        {
+            var uniqueNeighbors = new HashSet<int>();
+
+            // Add all outgoing neighbors
+            foreach (var edge in nodeEdges[i])
+            {
+                uniqueNeighbors.Add(edge.ToNodeIdx);
+            }
+
+            // Add all incoming neighbors
+            foreach (var incomingNodeIdx in incomingEdges[i])
+            {
+                uniqueNeighbors.Add(incomingNodeIdx);
+            }
+
+            int degree = uniqueNeighbors.Count;
+
+            if (degree == 0)
+            {
+                isolatedVertices++;
+            }
+            else if (degree == 1)
+            {
+                leafNodes++;
+            }
+            else if (degree >= 3)
+            {
+                junctions++;
+            }
+        }
+
+        DA.SetData(OutParam_LeafNodes, leafNodes);
+        DA.SetData(OutParam_Junctions, junctions);
+        DA.SetData(OutParam_IsolatedVertices, isolatedVertices);
+
+        // Connected components (islands): maximal subgraphs where any two vertices
+        // have a path between them (disconnected parts of the graph)
+        // Detection uses BFS starting from each unvisited node to find all reachable nodes
+        // Traverses both outgoing and incoming edges to handle directed graphs
+        // Each BFS traversal identifies one connected component
+        int componentCount = GraphUtilities.FindConnectedComponents(nodeEdges).Count;
+        DA.SetData(OutParam_ConnectedComponents, componentCount);
+    }
+}

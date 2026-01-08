@@ -57,9 +57,9 @@ public static class IconGenerator
 
     private static void DrawText(Graphics graphics, string name)
     {
-        var text = JaybirdInfo.ExtractInitials(name);
+        var text = GH_JaybirdInfo.ExtractInitials(name);
 
-        using var textBrush = new SolidBrush(JaybirdInfo.TextColor);
+        using var textBrush = new SolidBrush(GH_JaybirdInfo.TextColor);
         using var format = new StringFormat
         {
             Alignment = StringAlignment.Center,
@@ -68,7 +68,7 @@ public static class IconGenerator
 
         graphics.DrawString(
             text,
-            JaybirdInfo.IconFont,
+            GH_JaybirdInfo.IconFont,
             textBrush,
             new RectangleF(0, 0, IconSize, IconSize),
             format
