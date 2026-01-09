@@ -120,6 +120,13 @@ public class GH_SimplifyGraphComponent : GH_Component
 
         // STEP 1: CLASSIFY NODES BASED ON CONNECTIVITY
         //
+        // GRAPH SEMANTICS: This algorithm assumes a DIRECTED graph where edges represent
+        // one-way connections. Bidirectional roads are represented as TWO edges (A→B, B→A).
+        // Waypoint detection treats the graph as undirected for neighbor counting (counts both
+        // incoming and outgoing), but chain-following strictly follows outgoing edges (directed).
+        // This hybrid approach correctly identifies waypoints in bidirectional road networks
+        // where degree-2 nodes lie between junctions.
+        //
         // A node is a WAYPOINT if it has exactly 2 unique neighbors AND is not a
         // terminal node with asymmetric edges (start fork or sink merge).
         //
@@ -233,10 +240,8 @@ public class GH_SimplifyGraphComponent : GH_Component
         // 4. Repeat step 3 until reaching a junction node
         // 5. Create a merged edge from start junction to end junction with the accumulated geometry
         //
-        // BIDIRECTIONAL HANDLING:
-        // To prevent infinite loops in bidirectional graphs (where A→B and B→A both exist),
-        // we track the previous node (prevNodeIdx) and only follow edges that lead forward,
-        // not backward along the chain we just came from.
+        // SAFETY: If a waypoint chain is broken (cycle or missing forward edge), the edge is
+        // dropped and a warning is logged. This should not occur with proper graph structure.
         //
         // The result is a simplified graph where each edge directly connects junctions, with
         // geometry lists that capture the full path through all intermediate waypoints.
@@ -249,6 +254,7 @@ public class GH_SimplifyGraphComponent : GH_Component
 
         for (int startNodeIdx = 0; startNodeIdx < originalNodeCount; startNodeIdx++)
         {
+            // Only process junctions; skip waypoints as they're absorbed into merged edges
             if (oldToNewNodeIdx[startNodeIdx] == -1)
             {
                 continue;
@@ -258,6 +264,27 @@ public class GH_SimplifyGraphComponent : GH_Component
 
             foreach (var firstEdge in originalEdges[startNodeIdx])
             {
+                // Safety: verify the immediate destination before tracing
+                if (oldToNewNodeIdx[firstEdge.ToNodeIdx] != -1)
+                {
+                    // Direct edge to another junction; no chain to trace
+                    var mergedEdge = new Edge
+                    {
+                        ToNodeIdx = oldToNewNodeIdx[firstEdge.ToNodeIdx],
+                        Length = firstEdge.Length,
+                        Geometry =
+                            firstEdge.Geometry != null
+                                ? new List<GeometryBase>(firstEdge.Geometry)
+                                : new List<GeometryBase>(),
+                    };
+                    newNodeEdges[startJunctionIdx].Add(mergedEdge);
+                    continue;
+                }
+
+                // TRACE WAYPOINT CHAIN:
+                // Follow the waypoint chain from this edge, accumulating geometry and length,
+                // until reaching another junction. Handles bidirectional graphs by tracking
+                // the previous node and only following forward edges to avoid infinite loops.
                 var geometries = new List<GeometryBase>();
                 var currentNodeIdx = firstEdge.ToNodeIdx;
                 var totalLength = firstEdge.Length;
@@ -267,15 +294,12 @@ public class GH_SimplifyGraphComponent : GH_Component
                     geometries.AddRange(firstEdge.Geometry);
                 }
 
-                // Track previous node to avoid following bidirectional edges backward
                 var prevNodeIdx = startNodeIdx;
-
-                // Track visited nodes in this trace to detect cycles (defensive)
-                var visitedInTrace = new HashSet<int> { startNodeIdx };
+                var visitedInTrace = new HashSet<int>();
 
                 while (oldToNewNodeIdx[currentNodeIdx] == -1)
                 {
-                    // Cycle detection: if we've visited this node before, break
+                    // Cycle detection: if we've visited this node before, chain is broken
                     if (visitedInTrace.Contains(currentNodeIdx))
                     {
                         break;
@@ -300,7 +324,7 @@ public class GH_SimplifyGraphComponent : GH_Component
 
                     if (!foundNext)
                     {
-                        // Waypoint has no forward edge - shouldn't occur with proper waypoint detection
+                        // Waypoint has no forward edge; chain terminates abnormally
                         break;
                     }
 
@@ -327,6 +351,16 @@ public class GH_SimplifyGraphComponent : GH_Component
                     };
 
                     newNodeEdges[startJunctionIdx].Add(mergedEdge);
+                }
+                else
+                {
+                    // Chain was broken: either cycle detected or no forward path found
+                    // This indicates a graph structure issue
+                    AddRuntimeMessage(
+                        GH_RuntimeMessageLevel.Warning,
+                        $"Waypoint chain from junction {startNodeIdx} was broken and discarded. "
+                            + "This may indicate a cycle or malformed graph structure."
+                    );
                 }
             }
         }
