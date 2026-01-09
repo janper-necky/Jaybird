@@ -7,18 +7,18 @@ using Rhino.Geometry;
 namespace Jaybird;
 
 // MAKE GRAPH FROM ROAD MAP COMPONENT
-// Converts a collection of lines (representing roads or paths) into a graph data structure
+// Converts a collection of polylines (representing roads or paths) into a graph data structure
 // suitable for pathfinding algorithms like A* and Dijkstra.
 //
 // PURPOSE:
-// Transforms geometric line data into a mathematical graph structure by converting:
-// - Line endpoints → Graph nodes (intersection points)
-// - Lines → Graph edges (connections between nodes)
+// Transforms geometric polyline data into a mathematical graph structure by converting:
+// - Polyline endpoints → Graph nodes (intersection points)
+// - Polylines → Graph edges (connections between nodes)
 //
 // CONVERSION PROCESS:
 //
 // 1. NODE CREATION (Deduplication):
-//    - Extract all line endpoints (From and To points)
+//    - Extract all polyline endpoints (first and last points)
 //    - Round coordinates to specified decimal precision (default 3 decimals)
 //    - Merge duplicate points within tolerance into single nodes
 //    - Assign each unique point a node index (0, 1, 2, ...)
@@ -26,12 +26,12 @@ namespace Jaybird;
 //      may differ by tiny amounts (e.g., 10.000001 vs 10.000000)
 //
 // 2. EDGE CREATION (Directional vs Bidirectional):
-//    - For each line, create edge(s) based on "Two Way" parameter:
+//    - For each polyline, create edge(s) based on "Two Way" parameter:
 //      * Two Way = true: Creates TWO edges (A→B and B→A) for bidirectional travel
 //        Example: Two-way streets, pedestrian paths, hallways
-//      * Two Way = false: Creates ONE edge (A→B) following line direction
+//      * Two Way = false: Creates ONE edge (A→B) following polyline direction
 //        Example: One-way streets, conveyor belts, directed flows
-//    - Edge length = Euclidean distance between endpoints
+//    - Edge length = Total length of the polyline
 //    - Edges stored in adjacency list: nodeEdges[sourceIdx] = set of outgoing edges
 //
 // OUTPUT:
@@ -41,9 +41,9 @@ namespace Jaybird;
 // - Graph manipulation (Split Graph component)
 //
 // EXAMPLE:
-// Input: Two lines forming an L-shape
-//   Line1: (0,0,0) → (1,0,0)
-//   Line2: (1,0,0) → (1,1,0)
+// Input: Two polylines forming an L-shape
+//   Polyline1: (0,0,0) → (1,0,0)
+//   Polyline2: (1,0,0) → (1,1,0)
 // Two Way = true
 // Output: Graph with 3 nodes [0,1,2] and 4 edges:
 //   Node 0 → Node 1 (length 1.0)
@@ -59,8 +59,8 @@ public class GH_MakeGraphComponent : GH_Component
         : base(
             ComponentName,
             GH_JaybirdInfo.ExtractInitials(ComponentName),
-            "Create a graph from lines representing a road network, "
-                + "where line endpoints become nodes and lines become edges.",
+            "Create a graph from polylines representing a road network, "
+                + "where polyline endpoints become nodes and polylines become edges.",
             GH_JaybirdInfo.TabName,
             "Graph Search"
         ) { }
@@ -72,23 +72,23 @@ public class GH_MakeGraphComponent : GH_Component
 
     public override Guid ComponentGuid => new("fa7a5090-a7df-445a-ac1c-2f9bb42eed60");
 
-    private const int InParam_Lines = 0;
+    private const int InParam_Polylines = 0;
     private const int InParam_TwoWay = 1;
     private const int InParam_Decimals = 2;
 
     protected override void RegisterInputParams(GH_InputParamManager pManager)
     {
-        pManager.AddLineParameter(
-            "Lines",
-            "L",
-            "Road network as lines: endpoints become intersection nodes, "
-                + "lines become connections (edges) between nodes",
+        pManager.AddCurveParameter(
+            "Polylines",
+            "P",
+            "Road network as polylines: first and last points become intersection nodes, "
+                + "polylines become connections (edges) between nodes",
             GH_ParamAccess.list
         );
         pManager.AddBooleanParameter(
             "Two Way",
             "TW",
-            "If true, roads are bidirectional; if false, roads follow line direction only",
+            "If true, roads are bidirectional; if false, roads follow polyline direction only",
             GH_ParamAccess.item,
             true
         );
@@ -109,15 +109,15 @@ public class GH_MakeGraphComponent : GH_Component
             new GH_GraphParameter(),
             "Graph",
             "G",
-            "Graph created from the input lines",
+            "Graph created from the input polylines",
             GH_ParamAccess.item
         );
     }
 
     protected override void SolveInstance(IGH_DataAccess DA)
     {
-        var lines = new List<Line>();
-        DA.GetDataList(InParam_Lines, lines);
+        var polylines = new List<Curve>();
+        DA.GetDataList(InParam_Polylines, polylines);
 
         bool twoWay = true;
         DA.GetData(InParam_TwoWay, ref twoWay);
@@ -131,9 +131,9 @@ public class GH_MakeGraphComponent : GH_Component
 
         int zeroLengthSkipped = 0;
 
-        foreach (var line in lines)
+        foreach (var polyline in polylines)
         {
-            var nodeAPointRounded = RoundPoint(line.From, decimals);
+            var nodeAPointRounded = RoundPoint(polyline.PointAtStart, decimals);
             if (!nodePointToIndex.TryGetValue(nodeAPointRounded, out var nodeAIdx))
             {
                 nodeAIdx = nodePointToIndex.Count;
@@ -141,7 +141,7 @@ public class GH_MakeGraphComponent : GH_Component
                 nodePoints.Add(nodeAPointRounded);
             }
 
-            var nodeBPointRounded = RoundPoint(line.To, decimals);
+            var nodeBPointRounded = RoundPoint(polyline.PointAtEnd, decimals);
             if (!nodePointToIndex.TryGetValue(nodeBPointRounded, out var nodeBIdx))
             {
                 nodeBIdx = nodePointToIndex.Count;
@@ -155,16 +155,13 @@ public class GH_MakeGraphComponent : GH_Component
                 continue;
             }
 
-            var length = line.Length;
+            var length = polyline.GetLength();
 
             var edgeAB = new Edge
             {
                 ToNodeIdx = nodeBIdx,
                 Length = length,
-                Geometry = new List<GeometryBase>
-                {
-                    new LineCurve(nodeAPointRounded, nodeBPointRounded),
-                },
+                Geometry = new List<GeometryBase> { polyline.Duplicate() },
             };
             if (nodeIdxToEdges.TryGetValue(nodeAIdx, out var edgesFromA))
             {
@@ -178,14 +175,13 @@ public class GH_MakeGraphComponent : GH_Component
 
             if (twoWay)
             {
+                var reversedPolyline = (Curve)polyline.Duplicate();
+                reversedPolyline.Reverse();
                 var edgeBA = new Edge
                 {
                     ToNodeIdx = nodeAIdx,
                     Length = length,
-                    Geometry = new List<GeometryBase>
-                    {
-                        new LineCurve(nodeBPointRounded, nodeAPointRounded),
-                    },
+                    Geometry = new List<GeometryBase> { reversedPolyline },
                 };
                 if (nodeIdxToEdges.TryGetValue(nodeBIdx, out var edgesFromB))
                 {
@@ -203,7 +199,7 @@ public class GH_MakeGraphComponent : GH_Component
         {
             AddRuntimeMessage(
                 GH_RuntimeMessageLevel.Remark,
-                $"Skipped {zeroLengthSkipped} zero-length line{(zeroLengthSkipped == 1 ? "" : "s")}"
+                $"Skipped {zeroLengthSkipped} zero-length polyline{(zeroLengthSkipped == 1 ? "" : "s")}"
             );
         }
 
