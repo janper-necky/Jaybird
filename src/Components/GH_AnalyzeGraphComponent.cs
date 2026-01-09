@@ -76,14 +76,21 @@ public class GH_AnalyzeGraphComponent : GH_Component
         );
     }
 
-    private const int OutParam_Edges = 0;
-    private const int OutParam_LeafNodes = 1;
-    private const int OutParam_Junctions = 2;
-    private const int OutParam_IsolatedVertices = 3;
-    private const int OutParam_ConnectedComponents = 4;
+    private const int OutParam_Nodes = 0;
+    private const int OutParam_Edges = 1;
+    private const int OutParam_LeafNodeCount = 2;
+    private const int OutParam_JunctionCount = 3;
+    private const int OutParam_IsolatedVertexCount = 4;
+    private const int OutParam_ComponentCount = 5;
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
+        pManager.AddPointParameter(
+            "Nodes",
+            "N",
+            "All nodes in the graph in their original order (indices preserved for search algorithms)",
+            GH_ParamAccess.list
+        );
         pManager.AddCurveParameter(
             "Edges",
             "E",
@@ -91,25 +98,25 @@ public class GH_AnalyzeGraphComponent : GH_Component
             GH_ParamAccess.list
         );
         pManager.AddIntegerParameter(
-            "Leaf Nodes",
+            "Leaf Node Count",
             "L",
             "Number of leaf nodes (dead ends): nodes connected to exactly one neighbor",
             GH_ParamAccess.item
         );
         pManager.AddIntegerParameter(
-            "Junctions",
+            "Junction Count",
             "J",
             "Number of junctions (crossroads): nodes connected to 3+ neighbors",
             GH_ParamAccess.item
         );
         pManager.AddIntegerParameter(
-            "Isolated Vertices",
+            "Isolated Vertex Count",
             "IV",
             "Number of isolated vertices (orphans): nodes with no connections",
             GH_ParamAccess.item
         );
         pManager.AddIntegerParameter(
-            "Connected Components",
+            "Component Count",
             "CC",
             "Number of connected components (islands): disconnected subgraphs",
             GH_ParamAccess.item
@@ -130,14 +137,23 @@ public class GH_AnalyzeGraphComponent : GH_Component
             return;
         }
 
+        var nodePositions = ghGraph.NodePositions;
         var nodeEdges = ghGraph.NodeEdges;
+
+        DA.SetDataList(OutParam_Nodes, nodePositions);
 
         var edgeCurves = new List<Curve>();
         for (int i = 0; i < nodeEdges.Length; i++)
         {
             foreach (var edge in nodeEdges[i])
             {
-                edgeCurves.Add(edge.Geometry.ToNurbsCurve());
+                foreach (var geom in edge.Geometry)
+                {
+                    if (geom is Curve curve)
+                    {
+                        edgeCurves.Add(curve);
+                    }
+                }
             }
         }
         DA.SetDataList(OutParam_Edges, edgeCurves);
@@ -197,9 +213,9 @@ public class GH_AnalyzeGraphComponent : GH_Component
             }
         }
 
-        DA.SetData(OutParam_LeafNodes, leafNodes);
-        DA.SetData(OutParam_Junctions, junctions);
-        DA.SetData(OutParam_IsolatedVertices, isolatedVertices);
+        DA.SetData(OutParam_LeafNodeCount, leafNodes);
+        DA.SetData(OutParam_JunctionCount, junctions);
+        DA.SetData(OutParam_IsolatedVertexCount, isolatedVertices);
 
         // Connected components (islands): maximal subgraphs where any two vertices
         // have a path between them (disconnected parts of the graph)
@@ -207,6 +223,6 @@ public class GH_AnalyzeGraphComponent : GH_Component
         // Traverses both outgoing and incoming edges to handle directed graphs
         // Each BFS traversal identifies one connected component
         int componentCount = GraphUtilities.FindConnectedComponents(nodeEdges).Count;
-        DA.SetData(OutParam_ConnectedComponents, componentCount);
+        DA.SetData(OutParam_ComponentCount, componentCount);
     }
 }

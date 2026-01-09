@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using Grasshopper.Kernel;
+using Rhino.Geometry;
 
 namespace Jaybird;
 
@@ -122,6 +123,7 @@ public class GH_SplitGraphComponent : GH_Component
             return;
         }
 
+        var nodePositions = ghGraph.NodePositions;
         var nodeEdges = ghGraph.NodeEdges;
 
         var components = GraphUtilities.FindConnectedComponents(nodeEdges);
@@ -137,9 +139,12 @@ public class GH_SplitGraphComponent : GH_Component
                 oldToNewIndex[component[i]] = i;
             }
 
+            var newNodePositions = new List<Point3d>();
             var newNodeEdges = new List<HashSet<Edge>>();
             foreach (var oldIdx in component)
             {
+                newNodePositions.Add(nodePositions[oldIdx]);
+
                 var remappedEdges = new HashSet<Edge>();
                 foreach (var edge in nodeEdges[oldIdx])
                 {
@@ -155,7 +160,7 @@ public class GH_SplitGraphComponent : GH_Component
                 newNodeEdges.Add(remappedEdges);
             }
 
-            var newGraph = new GH_Graph(newNodeEdges);
+            var newGraph = new GH_Graph(newNodePositions, newNodeEdges);
             outputGraphs.Add(newGraph);
         }
 

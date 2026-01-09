@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Runtime.Serialization.Formatters.Binary;
 using GH_IO.Serialization;
 using GH_IO.Types;
 using Grasshopper.Kernel.Types;
@@ -39,9 +42,9 @@ namespace Jaybird;
 // - Efficient for pathfinding algorithms
 //
 // NODE STRUCTURE:
-// Nodes are identified by their index (0, 1, 2, ...) in the adjacency list.
-// Node positions are NOT stored - they are derived from edge geometries when needed.
-// Each edge's Polyline geometry contains the full path information.
+// Nodes are identified by their index (0, 1, 2, ...) in the arrays.
+// Node positions are explicitly stored in _nodePositions array.
+// Each node's position is the definitive source of truth for its location.
 //
 // EDGE STRUCTURE:
 // Each edge connects two nodes and stores:
@@ -50,6 +53,7 @@ namespace Jaybird;
 // - Geometry: Polyline representing the actual path geometry
 //
 // DATA STORAGE:
+// _nodePositions[i] = position (Point3d) of node i
 // _nodeEdges[i] = a HashSet of all outgoing edges from node i
 //
 // EXAMPLE:
@@ -66,22 +70,13 @@ namespace Jaybird;
 // - Null input data
 // - Invalid edge references
 // - Serialization errors
-//
-// SERIALIZATION:
-// Implements Write() and Read() methods for saving/loading graphs in Grasshopper files.
-// Uses Grasshopper's GH_IWriter/GH_IReader for persistence.
-//
-// GRASSHOPPER INTEGRATION:
-// Implements IGH_Goo interface to work as a native Grasshopper data type:
-// - Can be passed between components via wires
-// - Supports duplication, validation, and type conversion
-// - Displays summary information in Grasshopper UI
 
 public class GH_Graph : IGH_Goo
 {
     private int _nodeCount;
     private int _edgeCount;
 
+    private Point3d[] _nodePositions;
     private HashSet<Edge>[] _nodeEdges;
 
     private bool _isValid;
@@ -89,24 +84,54 @@ public class GH_Graph : IGH_Goo
 
     public GH_Graph()
     {
+        _nodePositions = [];
         _nodeEdges = [];
         _isValid = false;
         _invalidReason = "The graph is uninitialized";
     }
 
-    public GH_Graph(IReadOnlyList<HashSet<Edge>> nodeEdges)
+    public GH_Graph(IReadOnlyList<Point3d> nodePositions, IReadOnlyList<HashSet<Edge>> nodeEdges)
     {
+        if (nodePositions == null)
+        {
+            _nodeCount = 0;
+            _edgeCount = 0;
+            _nodePositions = [];
+            _nodeEdges = [];
+            _isValid = false;
+            _invalidReason = "Node positions collection is null";
+            return;
+        }
+
         if (nodeEdges == null)
         {
             _nodeCount = 0;
             _edgeCount = 0;
+            _nodePositions = [];
             _nodeEdges = [];
             _isValid = false;
             _invalidReason = "Edges collection is null";
             return;
         }
 
+        if (nodePositions.Count != nodeEdges.Count)
+        {
+            _nodeCount = 0;
+            _edgeCount = 0;
+            _nodePositions = [];
+            _nodeEdges = [];
+            _isValid = false;
+            _invalidReason = "Node positions and edges collections have different counts";
+            return;
+        }
+
         _nodeCount = nodeEdges.Count;
+
+        _nodePositions = new Point3d[nodePositions.Count];
+        for (int i = 0; i < nodePositions.Count; i++)
+        {
+            _nodePositions[i] = nodePositions[i];
+        }
 
         _nodeEdges = new HashSet<Edge>[nodeEdges.Count];
         for (int i = 0; i < nodeEdges.Count; i++)
@@ -115,6 +140,7 @@ public class GH_Graph : IGH_Goo
             {
                 _nodeCount = 0;
                 _edgeCount = 0;
+                _nodePositions = [];
                 _nodeEdges = [];
                 _isValid = false;
                 _invalidReason = $"Edge set at node {i} is null";
@@ -141,6 +167,8 @@ public class GH_Graph : IGH_Goo
 
     public string IsValidWhyNot => _isValid ? string.Empty : _invalidReason;
 
+    public Point3d[] NodePositions => _nodePositions;
+
     public HashSet<Edge>[] NodeEdges => _nodeEdges;
 
     public bool CastFrom(object source)
@@ -156,7 +184,7 @@ public class GH_Graph : IGH_Goo
 
     public IGH_Goo Duplicate()
     {
-        return new GH_Graph(_nodeEdges);
+        return new GH_Graph(_nodePositions, _nodeEdges);
     }
 
     public IGH_GooProxy? EmitProxy()
@@ -168,6 +196,17 @@ public class GH_Graph : IGH_Goo
     {
         writer.SetInt32("NodeCount", _nodeCount);
         writer.SetInt32("EdgeCount", _edgeCount);
+
+        // Serialize node positions
+        for (int i = 0; i < _nodePositions.Length; i++)
+        {
+            writer.SetPoint3D(
+                $"Node_{i}_Position",
+                new GH_Point3D(_nodePositions[i].X, _nodePositions[i].Y, _nodePositions[i].Z)
+            );
+        }
+
+        // Serialize edges
         for (int i = 0; i < _nodeEdges.Length; i++)
         {
             var edgeSet = _nodeEdges[i];
@@ -179,15 +218,22 @@ public class GH_Graph : IGH_Goo
                 writer.SetInt32($"Node_{i}_Edge_{j}_ToNodeIdx", edges[j].ToNodeIdx);
                 writer.SetDouble($"Node_{i}_Edge_{j}_Length", edges[j].Length);
 
-                // Serialize polyline geometry (always present)
-                var polyline = edges[j].Geometry;
-                writer.SetInt32($"Node_{i}_Edge_{j}_GeometryCount", polyline.Count);
-                for (int k = 0; k < polyline.Count; k++)
+                // Serialize geometry list using BinaryFormatter
+#pragma warning disable SYSLIB0011 // BinaryFormatter is obsolete
+                var formatter = new BinaryFormatter();
+#pragma warning restore SYSLIB0011
+                using (var dataStream = new MemoryStream())
                 {
-                    writer.SetPoint3D(
-                        $"Node_{i}_Edge_{j}_Geometry_{k}",
-                        new GH_Point3D(polyline[k].X, polyline[k].Y, polyline[k].Z)
-                    );
+                    try
+                    {
+                        formatter.Serialize(dataStream, edges[j].Geometry.ToArray());
+                        writer.SetByteArray($"Node_{i}_Edge_{j}_Geometry", dataStream.ToArray());
+                    }
+                    catch
+                    {
+                        // If serialization fails, write empty array
+                        writer.SetByteArray($"Node_{i}_Edge_{j}_Geometry", new byte[0]);
+                    }
                 }
             }
         }
@@ -221,8 +267,25 @@ public class GH_Graph : IGH_Goo
                 return false;
             }
 
+            _nodePositions = new Point3d[_nodeCount];
             _nodeEdges = new HashSet<Edge>[_nodeCount];
 
+            // Deserialize node positions
+            for (int i = 0; i < _nodeCount; i++)
+            {
+                var positionKey = $"Node_{i}_Position";
+                if (reader.ItemExists(positionKey))
+                {
+                    var ghPoint = reader.GetPoint3D(positionKey);
+                    _nodePositions[i] = new Point3d(ghPoint.x, ghPoint.y, ghPoint.z);
+                }
+                else
+                {
+                    _nodePositions[i] = Point3d.Unset;
+                }
+            }
+
+            // Deserialize edges
             for (int i = 0; i < _nodeCount; i++)
             {
                 var edges = new HashSet<Edge>();
@@ -246,30 +309,34 @@ public class GH_Graph : IGH_Goo
 
                                 if (toNodeIdx >= 0 && toNodeIdx < _nodeCount && length >= 0)
                                 {
-                                    // Deserialize polyline geometry
-                                    Polyline geometry;
-                                    var geometryCountKey = $"Node_{i}_Edge_{j}_GeometryCount";
-                                    if (reader.ItemExists(geometryCountKey))
+                                    // Deserialize geometry list using BinaryFormatter
+                                    List<GeometryBase> geometries = new List<GeometryBase>();
+                                    var geometryKey = $"Node_{i}_Edge_{j}_Geometry";
+                                    if (reader.ItemExists(geometryKey))
                                     {
-                                        var geometryCount = reader.GetInt32(geometryCountKey);
-                                        var points = new List<Point3d>();
-                                        for (int k = 0; k < geometryCount; k++)
+                                        var geometryData = reader.GetByteArray(geometryKey);
+                                        if (geometryData.Length > 0)
                                         {
-                                            var geometryKey = $"Node_{i}_Edge_{j}_Geometry_{k}";
-                                            if (reader.ItemExists(geometryKey))
+                                            using (
+                                                var geometryStream = new MemoryStream(geometryData)
+                                            )
                                             {
-                                                var ghPoint = reader.GetPoint3D(geometryKey);
-                                                points.Add(
-                                                    new Point3d(ghPoint.x, ghPoint.y, ghPoint.z)
-                                                );
+                                                try
+                                                {
+#pragma warning disable SYSLIB0011 // BinaryFormatter is obsolete
+                                                    var formatter = new BinaryFormatter();
+#pragma warning restore SYSLIB0011
+                                                    var geometry = (GeometryBase[])
+                                                        formatter.Deserialize(geometryStream);
+                                                    geometries = geometry.ToList();
+                                                }
+                                                catch
+                                                {
+                                                    // If deserialization fails, use empty list
+                                                    geometries = new List<GeometryBase>();
+                                                }
                                             }
                                         }
-                                        geometry = new Polyline(points);
-                                    }
-                                    else
-                                    {
-                                        // Cannot create edge without geometry
-                                        continue;
                                     }
 
                                     edges.Add(
@@ -277,7 +344,7 @@ public class GH_Graph : IGH_Goo
                                         {
                                             ToNodeIdx = toNodeIdx,
                                             Length = length,
-                                            Geometry = geometry,
+                                            Geometry = geometries,
                                         }
                                     );
                                 }
@@ -295,6 +362,7 @@ public class GH_Graph : IGH_Goo
         {
             _nodeCount = 0;
             _edgeCount = 0;
+            _nodePositions = [];
             _nodeEdges = [];
             _isValid = false;
             _invalidReason = "Exception occurred while reading serialized data";

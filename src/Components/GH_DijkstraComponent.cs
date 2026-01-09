@@ -64,8 +64,8 @@ public class GH_DijkstraComponent : GH_Component
         pManager.AddCurveParameter(
             "Path",
             "P",
-            "Path from start to end as polyline",
-            GH_ParamAccess.item
+            "Path from start to end as geometry",
+            GH_ParamAccess.list
         );
         pManager.AddLineParameter(
             "Visited Edges",
@@ -89,6 +89,7 @@ public class GH_DijkstraComponent : GH_Component
             return;
         }
 
+        var nodePositions = ghGraph.NodePositions;
         var nodeEdges = ghGraph.NodeEdges;
 
         int startNodeIdx = 0;
@@ -183,7 +184,7 @@ public class GH_DijkstraComponent : GH_Component
                 if (showVisitedEdges)
                 {
                     visitedEdgeLines.Add(
-                        new Line(edge.Geometry[0], edge.Geometry[edge.Geometry.Count - 1])
+                        new Line(nodePositions[currentNodeIdx], nodePositions[neighborNodeIdx])
                     );
                 }
 
@@ -244,52 +245,24 @@ public class GH_DijkstraComponent : GH_Component
 
         pathNodeIndices.Reverse();
 
-        // Reconstruct path geometry from edge polylines
-        var pathPoints = new List<Point3d>();
+        // Reconstruct path geometry from edge geometries
+        var pathGeometries = new List<GeometryBase>();
         for (int i = 0; i < pathNodeIndices.Count - 1; i++)
         {
             var fromNodeIdx = pathNodeIndices[i];
             var toNodeIdx = pathNodeIndices[i + 1];
 
             // Find the edge from fromNodeIdx to toNodeIdx
-            Edge? foundEdge = null;
             foreach (var edge in nodeEdges[fromNodeIdx])
             {
                 if (edge.ToNodeIdx == toNodeIdx)
                 {
-                    foundEdge = edge;
-                    break;
-                }
-            }
-
-            if (foundEdge.HasValue)
-            {
-                var edgePolyline = foundEdge.Value.Geometry;
-                // Add all points except the last one (to avoid duplicates)
-                for (int j = 0; j < edgePolyline.Count - 1; j++)
-                {
-                    pathPoints.Add(edgePolyline[j]);
-                }
-            }
-        }
-
-        // Add the final point from the last edge
-        if (pathNodeIndices.Count > 1)
-        {
-            var lastFromIdx = pathNodeIndices[pathNodeIndices.Count - 2];
-            var lastToIdx = pathNodeIndices[pathNodeIndices.Count - 1];
-            foreach (var edge in nodeEdges[lastFromIdx])
-            {
-                if (edge.ToNodeIdx == lastToIdx)
-                {
-                    pathPoints.Add(edge.Geometry[edge.Geometry.Count - 1]);
+                    pathGeometries.AddRange(edge.Geometry);
                     break;
                 }
             }
         }
 
-        var pathPolyline = new Polyline(pathPoints);
-
-        DA.SetData(OutParam_PathPolyline, pathPolyline);
+        DA.SetDataList(OutParam_PathPolyline, pathGeometries);
     }
 }

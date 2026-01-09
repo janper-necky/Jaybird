@@ -161,7 +161,10 @@ public class GH_MakeGraphComponent : GH_Component
             {
                 ToNodeIdx = nodeBIdx,
                 Length = length,
-                Geometry = new Polyline(new[] { nodeAPointRounded, nodeBPointRounded }),
+                Geometry = new List<GeometryBase>
+                {
+                    new LineCurve(nodeAPointRounded, nodeBPointRounded),
+                },
             };
             if (nodeIdxToEdges.TryGetValue(nodeAIdx, out var edgesFromA))
             {
@@ -179,7 +182,10 @@ public class GH_MakeGraphComponent : GH_Component
                 {
                     ToNodeIdx = nodeAIdx,
                     Length = length,
-                    Geometry = new Polyline(new[] { nodeBPointRounded, nodeAPointRounded }),
+                    Geometry = new List<GeometryBase>
+                    {
+                        new LineCurve(nodeBPointRounded, nodeAPointRounded),
+                    },
                 };
                 if (nodeIdxToEdges.TryGetValue(nodeBIdx, out var edgesFromB))
                 {
@@ -231,7 +237,7 @@ public class GH_MakeGraphComponent : GH_Component
             }
         }
 
-        var ghGraph = new GH_Graph(edgesArray);
+        var ghGraph = new GH_Graph(nodePoints, edgesArray);
 
         DA.SetData(OutParam_Graph, ghGraph);
     }

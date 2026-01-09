@@ -23,21 +23,11 @@ namespace Jaybird;
 //    For each junction, trace along degree-2 waypoints until hitting another junction:
 //      Junction A → waypoint → waypoint → waypoint → Junction B
 //    Collapses to:
-//      Junction A → [polyline edge with geometry] → Junction B
+//      Junction A → [merged edge with collected geometries] → Junction B
 //
 // 3. PRESERVE GEOMETRY:
-//    Store the full polyline path in the Edge.Geometry field so the visual path
-//    is maintained even though the graph structure is simplified.
-//
-// PERFORMANCE BENEFITS (at 500k+ edge scale):
-// - Memory: 70-80% reduction in adjacency list size
-// - Pathfinding: 4-5x faster (fewer nodes in priority queue)
-// - Graph operations: Smaller dictionaries, faster lookups
-//
-// BIDIRECTIONAL HANDLING:
-// For bidirectional edges, creates two separate merged edges:
-// - Forward: A → B with polyline [A, w1, w2, B]
-// - Reverse: B → A with reversed polyline [B, w2, w1, A]
+//    Collect all geometries from the original edges into the merged edge's Geometry list
+//    so the visual representation is maintained even though the graph structure is simplified.
 //
 // OUTPUT:
 // A new simplified GH_Graph with:
@@ -80,7 +70,6 @@ public class GH_SimplifyGraphComponent : GH_Component
     }
 
     private const int OutParam_SimplifiedGraph = 0;
-    private const int OutParam_ReductionInfo = 1;
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
@@ -89,12 +78,6 @@ public class GH_SimplifyGraphComponent : GH_Component
             "Simplified Graph",
             "SG",
             "Optimized graph with merged edges between junctions",
-            GH_ParamAccess.item
-        );
-        pManager.AddTextParameter(
-            "Info",
-            "I",
-            "Statistics about the simplification (nodes/edges before and after)",
             GH_ParamAccess.item
         );
     }
@@ -108,6 +91,25 @@ public class GH_SimplifyGraphComponent : GH_Component
             return;
         }
 
+        // ALGORITHM OVERVIEW:
+        //
+        // This algorithm simplifies a graph by collapsing linear chains of degree-2 nodes
+        // (waypoints) into single edges between junctions (decision points).
+        //
+        // STEPS:
+        // 1. Classify nodes based on connectivity (using node indices only)
+        // 2. Build index mapping from old nodes to new junction indices
+        // 3. Trace chains junction-to-junction and build merged edges directly
+        //
+        // EXAMPLE:
+        // Before: Junction A → waypoint1 → waypoint2 → Junction B (4 nodes, 3 edges)
+        // After:  Junction A → Junction B (2 nodes, 1 edge with polyline geometry)
+        //
+        // PRELIMINARY SETUP:
+        // Extract the original graph data and count the total number of edges across all nodes.
+        // This information is used later for reporting the optimization statistics.
+
+        var originalPositions = ghGraph.NodePositions;
         var originalEdges = ghGraph.NodeEdges;
         var originalNodeCount = originalEdges.Length;
         var originalEdgeCount = 0;
@@ -116,155 +118,188 @@ public class GH_SimplifyGraphComponent : GH_Component
             originalEdgeCount += originalEdges[i].Count;
         }
 
-        // Extract node positions from edge geometries (start points)
-        var originalNodes = new Point3d[originalNodeCount];
-        for (int i = 0; i < originalNodeCount; i++)
-        {
-            // Get node position from first edge starting from this node
-            if (originalEdges[i].Count > 0)
-            {
-                foreach (var edge in originalEdges[i])
-                {
-                    originalNodes[i] = edge.Geometry[0];
-                    break;
-                }
-            }
-            else
-            {
-                // No outgoing edges, find from incoming edges
-                for (int j = 0; j < originalNodeCount; j++)
-                {
-                    foreach (var edge in originalEdges[j])
-                    {
-                        if (edge.ToNodeIdx == i)
-                        {
-                            originalNodes[i] = edge.Geometry[edge.Geometry.Count - 1];
-                            goto NodePositionFound;
-                        }
-                    }
-                }
-                NodePositionFound:
-                ;
-            }
-        }
+        // STEP 1: CLASSIFY NODES BASED ON CONNECTIVITY
+        //
+        // A node is a WAYPOINT if it has exactly 2 unique neighbors, regardless of
+        // how many edges connect to those neighbors (handles bidirectional graphs).
+        //
+        // This correctly identifies waypoints in:
+        // - Unidirectional graphs: 1 incoming + 1 outgoing to different nodes
+        // - Bidirectional graphs: 2 incoming + 2 outgoing to the same 2 nodes
+        //
+        // All other nodes are JUNCTIONS and will be preserved:
+        // - Dead ends (1 neighbor)
+        // - Sources (1 neighbor)
+        // - Intersections (3+ neighbors)
+        // - Isolated nodes (0 neighbors)
 
-        // Calculate degree for each node (number of outgoing + incoming edges)
-        var nodeDegrees = new int[originalNodeCount];
+        // Build incoming edges lookup
+        var incomingEdges = new List<int>[originalNodeCount];
         for (int i = 0; i < originalNodeCount; i++)
         {
-            nodeDegrees[i] = originalEdges[i].Count; // outgoing edges
+            incomingEdges[i] = new List<int>();
         }
-        // Add incoming edges to degree count
         for (int i = 0; i < originalNodeCount; i++)
         {
             foreach (var edge in originalEdges[i])
             {
-                nodeDegrees[edge.ToNodeIdx]++;
+                incomingEdges[edge.ToNodeIdx].Add(i);
             }
         }
 
-        // Identify junctions (nodes with degree != 2)
-        var isJunction = new bool[originalNodeCount];
-        var junctionCount = 0;
+        // Identify waypoints: exactly 2 unique neighbors
+        var isWaypoint = new bool[originalNodeCount];
         for (int i = 0; i < originalNodeCount; i++)
         {
-            isJunction[i] = nodeDegrees[i] != 2;
-            if (isJunction[i])
+            var uniqueNeighbors = new HashSet<int>();
+
+            // Add outgoing neighbors
+            foreach (var edge in originalEdges[i])
             {
-                junctionCount++;
+                uniqueNeighbors.Add(edge.ToNodeIdx);
             }
+
+            // Add incoming neighbors
+            foreach (var incomingNodeIdx in incomingEdges[i])
+            {
+                uniqueNeighbors.Add(incomingNodeIdx);
+            }
+
+            isWaypoint[i] = uniqueNeighbors.Count == 2;
         }
 
-        // Map old node indices to new junction indices
+        // STEP 2: BUILD INDEX MAPPING FROM ORIGINAL TO SIMPLIFIED GRAPH
+        //
+        // Create a mapping array that translates old node indices to new junction indices.
+        // This is necessary because the simplified graph will only contain junctions, so we need
+        // to know which new index corresponds to each old junction node.
+        //
+        // Mapping strategy:
+        // - Junctions (not waypoints): Assigned sequential indices in the simplified graph (0, 1, 2, ...)
+        //   in the order they appear in the original graph
+        // - Waypoints: Marked with -1 to indicate they will not exist as nodes in the
+        //   simplified graph (they will be absorbed into edge geometry instead)
+        //
+        // The junction count represents the total number of nodes in the simplified graph.
+
         var oldToNewNodeIdx = new int[originalNodeCount];
-        int junctionIdx = 0;
+        var newNodePositions = new List<Point3d>();
+        int junctionCount = 0;
         for (int i = 0; i < originalNodeCount; i++)
         {
-            if (isJunction[i])
+            if (!isWaypoint[i])
             {
-                oldToNewNodeIdx[i] = junctionIdx;
-                junctionIdx++;
+                oldToNewNodeIdx[i] = junctionCount;
+                newNodePositions.Add(originalPositions[i]);
+                junctionCount++;
             }
             else
             {
-                oldToNewNodeIdx[i] = -1; // waypoint, will be merged
+                oldToNewNodeIdx[i] = -1;
             }
         }
 
-        // Build simplified graph by tracing chains between junctions
+        // STEP 3: BUILD SIMPLIFIED GRAPH BY TRACING CHAINS
+        //
+        // For each junction in the original graph, follow its outgoing edges through chains of
+        // waypoint nodes until reaching another junction. This process "walks" along the degree-2
+        // waypoints, accumulating their geometric points and summing their edge lengths.
+        //
+        // Chain tracing process:
+        // 1. Start from a junction node
+        // 2. Follow an outgoing edge to its destination
+        // 3. If destination is a waypoint (degree 2), continue following the outgoing edge that
+        //    doesn't lead back to the previous node (handles bidirectional graphs)
+        // 4. Repeat step 3 until reaching a junction node
+        // 5. Create a merged edge from start junction to end junction with the accumulated geometry
+        //
+        // BIDIRECTIONAL HANDLING:
+        // To prevent infinite loops in bidirectional graphs (where A→B and B→A both exist),
+        // we track the previous node (prevNodeIdx) and only follow edges that lead forward,
+        // not backward along the chain we just came from.
+        //
+        // The result is a simplified graph where each edge directly connects junctions, with
+        // geometry lists that capture the full path through all intermediate waypoints.
+
         var newNodeEdges = new List<HashSet<Edge>>();
         for (int i = 0; i < junctionCount; i++)
         {
             newNodeEdges.Add(new HashSet<Edge>());
         }
 
-        var visited = new HashSet<(int, int)>(); // Track (fromJunction, toJunction) pairs
-
         for (int startNodeIdx = 0; startNodeIdx < originalNodeCount; startNodeIdx++)
         {
-            if (!isJunction[startNodeIdx])
+            if (oldToNewNodeIdx[startNodeIdx] == -1)
             {
                 continue;
             }
 
             var startJunctionIdx = oldToNewNodeIdx[startNodeIdx];
 
-            // Trace along each outgoing edge from this junction
             foreach (var firstEdge in originalEdges[startNodeIdx])
             {
-                var path = new List<Point3d> { originalNodes[startNodeIdx] };
+                var geometries = new List<GeometryBase>();
                 var currentNodeIdx = firstEdge.ToNodeIdx;
                 var totalLength = firstEdge.Length;
 
-                // Follow degree-2 waypoints
-                while (!isJunction[currentNodeIdx])
+                geometries.AddRange(firstEdge.Geometry);
+
+                // Track previous node to avoid following bidirectional edges backward
+                var prevNodeIdx = startNodeIdx;
+                while (oldToNewNodeIdx[currentNodeIdx] == -1)
                 {
-                    path.Add(originalNodes[currentNodeIdx]);
-
-                    // Find the next edge (should be exactly one outgoing edge for degree-2)
                     var nextEdges = originalEdges[currentNodeIdx];
-                    if (nextEdges.Count != 1)
-                    {
-                        // This shouldn't happen for degree-2 nodes, but handle gracefully
-                        break;
-                    }
 
-                    // Get the single edge
+                    // Find the outgoing edge that doesn't go back to where we came from
+                    // (prevents infinite loops in bidirectional graphs)
                     Edge nextEdge = default;
+                    bool foundNext = false;
                     foreach (var edge in nextEdges)
                     {
-                        nextEdge = edge;
+                        if (edge.ToNodeIdx != prevNodeIdx)
+                        {
+                            nextEdge = edge;
+                            foundNext = true;
+                            break;
+                        }
+                    }
+
+                    if (!foundNext)
+                    {
+                        // Waypoint has no forward edge - shouldn't occur with proper waypoint detection
                         break;
                     }
+
+                    if (nextEdge.Geometry != null)
+                    {
+                        geometries.AddRange(nextEdge.Geometry);
+                    }
+
                     totalLength += nextEdge.Length;
+                    prevNodeIdx = currentNodeIdx;
                     currentNodeIdx = nextEdge.ToNodeIdx;
                 }
 
-                // currentNodeIdx is now a junction
-                path.Add(originalNodes[currentNodeIdx]);
                 var endJunctionIdx = oldToNewNodeIdx[currentNodeIdx];
 
-                // Avoid duplicate edges
-                if (visited.Contains((startJunctionIdx, endJunctionIdx)))
-                {
-                    continue;
-                }
-                visited.Add((startJunctionIdx, endJunctionIdx));
-
-                // Create merged edge with polyline geometry
-                var polyline = new Polyline(path);
                 var mergedEdge = new Edge
                 {
                     ToNodeIdx = endJunctionIdx,
                     Length = totalLength,
-                    Geometry = polyline,
+                    Geometry = geometries,
                 };
 
                 newNodeEdges[startJunctionIdx].Add(mergedEdge);
             }
         }
 
-        var simplifiedGraph = new GH_Graph(newNodeEdges);
+        // FINALIZATION:
+        //
+        // Create the simplified graph from the merged edges and calculate statistics to report
+        // the optimization results. Count the new edge total and compare to the original graph
+        // to show how much the graph was reduced.
+
+        var simplifiedGraph = new GH_Graph(newNodePositions, newNodeEdges);
 
         var newNodeCount = junctionCount;
         var newEdgeCount = 0;
@@ -273,20 +308,23 @@ public class GH_SimplifyGraphComponent : GH_Component
             newEdgeCount += newNodeEdges[i].Count;
         }
 
-        var info =
-            $"Original: {originalNodeCount} nodes, {originalEdgeCount} edges\n"
-            + $"Simplified: {newNodeCount} nodes, {newEdgeCount} edges\n"
-            + $"Reduction: {100.0 * (originalNodeCount - newNodeCount) / originalNodeCount:F1}% fewer nodes, "
-            + $"{100.0 * (originalEdgeCount - newEdgeCount) / originalEdgeCount:F1}% fewer edges";
-
         DA.SetData(OutParam_SimplifiedGraph, simplifiedGraph);
-        DA.SetData(OutParam_ReductionInfo, info);
 
-        if (newNodeCount < originalNodeCount)
+        if (newNodeCount < originalNodeCount || newEdgeCount < originalEdgeCount)
         {
+            var nodeReduction =
+                originalNodeCount > 0
+                    ? (originalNodeCount - newNodeCount) * 100.0 / originalNodeCount
+                    : 0;
+            var edgeReduction =
+                originalEdgeCount > 0
+                    ? (originalEdgeCount - newEdgeCount) * 100.0 / originalEdgeCount
+                    : 0;
+
             AddRuntimeMessage(
                 GH_RuntimeMessageLevel.Remark,
-                $"Merged {originalNodeCount - newNodeCount} waypoint nodes into {originalEdgeCount - newEdgeCount} fewer edges"
+                $"Simplified: {originalNodeCount} → {newNodeCount} nodes ({nodeReduction:F0}% reduction), "
+                    + $"{originalEdgeCount} → {newEdgeCount} edges ({edgeReduction:F0}% reduction)"
             );
         }
     }
