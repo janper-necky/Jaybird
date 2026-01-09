@@ -49,7 +49,7 @@ public class GH_SimplifyGraphComponent : GH_Component
             "Graph Search"
         ) { }
 
-    public override GH_Exposure Exposure => GH_Exposure.secondary;
+    public override GH_Exposure Exposure => GH_Exposure.tertiary;
 
     protected override Bitmap? Icon =>
         IconGenerator.GenerateComponentIcon(ComponentName, GH_JaybirdInfo.ComponentBackgroundColor);
@@ -120,18 +120,21 @@ public class GH_SimplifyGraphComponent : GH_Component
 
         // STEP 1: CLASSIFY NODES BASED ON CONNECTIVITY
         //
-        // A node is a WAYPOINT if it has exactly 2 unique neighbors, regardless of
-        // how many edges connect to those neighbors (handles bidirectional graphs).
+        // A node is a WAYPOINT if it has exactly 2 unique neighbors AND is not a
+        // terminal node with asymmetric edges (start fork or sink merge).
         //
         // This correctly identifies waypoints in:
         // - Unidirectional graphs: 1 incoming + 1 outgoing to different nodes
         // - Bidirectional graphs: 2 incoming + 2 outgoing to the same 2 nodes
         //
         // All other nodes are JUNCTIONS and will be preserved:
-        // - Dead ends (1 neighbor)
-        // - Sources (1 neighbor)
+        // - Dead ends (1 neighbor, or 0 neighbors)
+        // - Sources with 1 outgoing (1 neighbor)
+        // - Start forks: no incoming, 2+ outgoing (would have 2 neighbors but is a junction)
+        // - Sink merges: no outgoing, 2+ incoming (would have 2 neighbors but is a junction)
         // - Intersections (3+ neighbors)
         // - Isolated nodes (0 neighbors)
+        // - Self-loops are excluded from neighbor counting
 
         // Build incoming edges lookup
         var incomingEdges = new List<int>[originalNodeCount];
@@ -147,25 +150,42 @@ public class GH_SimplifyGraphComponent : GH_Component
             }
         }
 
-        // Identify waypoints: exactly 2 unique neighbors
+        // Identify waypoints: exactly 2 unique neighbors, but NOT a start/sink with asymmetric edges
         var isWaypoint = new bool[originalNodeCount];
         for (int i = 0; i < originalNodeCount; i++)
         {
+            var outDegree = originalEdges[i].Count;
+            var inDegree = incomingEdges[i].Count;
+
             var uniqueNeighbors = new HashSet<int>();
 
             // Add outgoing neighbors
             foreach (var edge in originalEdges[i])
             {
-                uniqueNeighbors.Add(edge.ToNodeIdx);
+                // Exclude self-loops from neighbor count
+                if (edge.ToNodeIdx != i)
+                {
+                    uniqueNeighbors.Add(edge.ToNodeIdx);
+                }
             }
 
             // Add incoming neighbors
             foreach (var incomingNodeIdx in incomingEdges[i])
             {
-                uniqueNeighbors.Add(incomingNodeIdx);
+                // Exclude self-loops from neighbor count
+                if (incomingNodeIdx != i)
+                {
+                    uniqueNeighbors.Add(incomingNodeIdx);
+                }
             }
 
-            isWaypoint[i] = uniqueNeighbors.Count == 2;
+            // A node is a waypoint if:
+            // - It has exactly 2 unique neighbors (excluding self), AND
+            // - It's not a start node (no incoming) with multiple outgoing edges (that's a fork), AND
+            // - It's not a sink node (no outgoing) with multiple incoming edges (that's a merge point)
+            var isStartFork = inDegree == 0 && outDegree > 1;
+            var isSinkMerge = outDegree == 0 && inDegree > 1;
+            isWaypoint[i] = uniqueNeighbors.Count == 2 && !isStartFork && !isSinkMerge;
         }
 
         // STEP 2: BUILD INDEX MAPPING FROM ORIGINAL TO SIMPLIFIED GRAPH
@@ -242,12 +262,26 @@ public class GH_SimplifyGraphComponent : GH_Component
                 var currentNodeIdx = firstEdge.ToNodeIdx;
                 var totalLength = firstEdge.Length;
 
-                geometries.AddRange(firstEdge.Geometry);
+                if (firstEdge.Geometry != null)
+                {
+                    geometries.AddRange(firstEdge.Geometry);
+                }
 
                 // Track previous node to avoid following bidirectional edges backward
                 var prevNodeIdx = startNodeIdx;
+
+                // Track visited nodes in this trace to detect cycles (defensive)
+                var visitedInTrace = new HashSet<int> { startNodeIdx };
+
                 while (oldToNewNodeIdx[currentNodeIdx] == -1)
                 {
+                    // Cycle detection: if we've visited this node before, break
+                    if (visitedInTrace.Contains(currentNodeIdx))
+                    {
+                        break;
+                    }
+                    visitedInTrace.Add(currentNodeIdx);
+
                     var nextEdges = originalEdges[currentNodeIdx];
 
                     // Find the outgoing edge that doesn't go back to where we came from
@@ -282,14 +316,18 @@ public class GH_SimplifyGraphComponent : GH_Component
 
                 var endJunctionIdx = oldToNewNodeIdx[currentNodeIdx];
 
-                var mergedEdge = new Edge
+                // Only create edge if we reached a valid junction (not broken mid-waypoint)
+                if (endJunctionIdx != -1)
                 {
-                    ToNodeIdx = endJunctionIdx,
-                    Length = totalLength,
-                    Geometry = geometries,
-                };
+                    var mergedEdge = new Edge
+                    {
+                        ToNodeIdx = endJunctionIdx,
+                        Length = totalLength,
+                        Geometry = geometries,
+                    };
 
-                newNodeEdges[startJunctionIdx].Add(mergedEdge);
+                    newNodeEdges[startJunctionIdx].Add(mergedEdge);
+                }
             }
         }
 
